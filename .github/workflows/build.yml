@@ -1,0 +1,30 @@
+name: Build Rx0 Vulnerability Scanner
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar o JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Compilar com Maven
+        run: mvn -B clean package
+
+      - name: Publicar o .jar como artefato para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: rx0-vuln-scanner-jar
+          path: target/rx0-vuln-scanner.jar
+          if-no-files-found: error
