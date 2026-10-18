@@ -28,13 +28,13 @@ assinado como *Criado por Rx0 - @rodrigocoutinho91*.
   (`/api/users`, `/api/admin`, `/api/me`, etc.) sem enviar nenhuma credencial e sinaliza
   quando retornam dados reais com HTTP 200.
 - **IDOR / BOLA sequencial** (API1): acessa `/api/users/1`, `/2`, `/3` (e variações) sem
-  autenticação e flaga quando objetos **diferentes** vêm de volta — indício de ausência de
+  autenticação e flaga quando objetos **diferentes** vêm de volta indício de ausência de
   checagem de ownership.
 - **Exposição excessiva de dados** (API3): varre respostas de endpoints de API procurando
   campos como `password`, `secret`, `access_token`, `cpf`, `cnpj`, número de cartão, etc.
   retornados sem necessidade.
 - **Introspecção GraphQL habilitada**: testa `/graphql`, `/api/graphql` e variações com uma
-  query de introspecção — se habilitada em produção, expõe todo o schema da API.
+  query de introspecção se habilitada em produção, expõe todo o schema da API.
 - **JWTs fracos no histórico do proxy**: vasculha o histórico do Proxy do Burp em busca de
   tokens `Authorization: Bearer` enviados ao host alvo, decodifica header/payload e aponta
   `alg: none` (token não assinado) e ausência da claim `exp` (token que nunca expira).
@@ -49,7 +49,7 @@ assinado como *Criado por Rx0 - @rodrigocoutinho91*.
 ### Injeção / inclusão de arquivo / SSRF
 
 - **SSRF**: testa parâmetros que aceitam URL (webhook, callback, avatar, fetch...) contra
-  alvos internos clássicos — incluindo o endpoint de metadata da AWS/GCP — e confirma pela
+  alvos internos clássicos — incluindo o endpoint de metadata da AWS/GCP e confirma pela
   assinatura de conteúdo que o SERVIDOR fez a requisição.
 - **Path Traversal / LFI**: injeta payloads de travessia de diretório (`../../etc/passwd`,
   variações com encoding e barra dupla, `win.ini`) em parâmetros que servem arquivo/página.
@@ -57,7 +57,7 @@ assinado como *Criado por Rx0 - @rodrigocoutinho91*.
   include/template e procura por mensagens de erro que confirmem que o servidor tentou
   buscar/incluir aquela URL remota (detecção baseada em erro, sem precisar hospedar payload).
 - **NoSQL Injection**: compara um login com credenciais inválidas normais (baseline) contra o
-  mesmo endpoint usando operadores `$ne` — se o comportamento virar "autenticado", é bypass.
+  mesmo endpoint usando operadores `$ne` se o comportamento virar "autenticado", é bypass.
 - **Mass Assignment**: envia campos extras e privilegiados (`isAdmin`, `role`, `balance`,
   `verified`...) em cadastro/atualização de perfil e verifica se a resposta ecoa esses
   valores, sinal de que o backend faz bind direto do JSON na entidade sem allowlist.
@@ -112,7 +112,7 @@ antes esses apps gerariam dezenas de "achados" falsos só porque toda URL retorn
 mesma página. Outros checks (SSTI, OS Command Injection) usam suas próprias técnicas de
 confirmação: baseline de conteúdo (SSTI) e dupla confirmação por tempo (OS Command Injection).
 
-> Isso **não substitui** o Active Scanner do Burp Pro nem uma avaliação manual completa — é um
+> Isso **não substitui** o Active Scanner do Burp Pro nem uma avaliação manual completa é um
 > conjunto enxuto e extensível de checks rápidos para triagem inicial. A arquitetura foi pensada
 > pra você ir plugando novos checks com o tempo (veja "Como adicionar um novo check" abaixo).
 
@@ -123,7 +123,7 @@ confirmação: baseline de conteúdo (SSTI) e dupla confirmação por tempo (OS 
 - Burp Suite Community ou Professional (testado a partir da linha 2023.x em diante, que já
   suporta a Montoya API)
 
-## Como compilar — passo a passo no Windows 10
+## Como compilar passo a passo no Windows 10
 
 Não precisa saber Java pra isso, só seguir os passos:
 
@@ -171,7 +171,7 @@ Se der erro de compilação, me manda o texto completo do erro que eu ajusto o c
 
 ## Como compilar online (sem instalar nada no PC)
 
-A opção mais confiável pra isso **não é** um "site genérico de compilar código" — a maioria
+A opção mais confiável pra isso **não é** um "site genérico de compilar código" a maioria
 não suporta projeto Maven multi-arquivo com dependências baixadas do Maven Central. O caminho
 certo e gratuito é o **GitHub Actions**, que eu já deixei configurado dentro do projeto
 (`.github/workflows/build.yml`): ele compila sozinho na nuvem e te entrega o `.jar` prontinho
@@ -184,7 +184,7 @@ pra download. Passo a passo:
    **Add file → Upload files**).
 4. Arraste a pasta `rx0-burp-scanner` inteira (ou todos os arquivos extraídos do zip) pra essa
    área de upload. Role pra baixo e clique em **Commit changes**.
-5. Vá na aba **Actions** do repositório — o workflow "Build Rx0 Vulnerability Scanner" já vai
+5. Vá na aba **Actions** do repositório o workflow "Build Rx0 Vulnerability Scanner" já vai
    estar rodando automaticamente (ou clique em **Run workflow** se não iniciar sozinho).
 6. Espere o ícone ficar verde (✅), geralmente leva 1-2 minutos.
 7. Clique no workflow que rodou → role até **Artifacts** → baixe **rx0-vuln-scanner-jar**
@@ -192,7 +192,7 @@ pra download. Passo a passo:
 8. Instale esse `.jar` no Burp normalmente (Extensions → Installed → Add → Java).
 
 Vantagem: o GitHub compila num ambiente limpo oficial, sem você precisar confiar código seu a
-um site de terceiros desconhecido — e você pode repetir esse processo toda vez que eu te mandar
+um site de terceiros desconhecido e você pode repetir esse processo toda vez que eu te mandar
 uma atualização do projeto.
 
 ## Como instalar no Burp
