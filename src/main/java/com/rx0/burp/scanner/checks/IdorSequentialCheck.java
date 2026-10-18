@@ -73,7 +73,12 @@ public class IdorSequentialCheck implements VulnCheck {
                                     "acessar aquele objeto específico (Broken Object Level Authorization — API1:2023).",
                             "IDs testados: " + IDS.length + " | URLs com 200 e conteúdo: " + urlsComSucesso,
                             "Implemente verificação de ownership/permissão em toda operação que recebe um ID de objeto, " +
-                                    "e exija autenticação nesses endpoints."));
+                                    "e exija autenticação nesses endpoints.",
+                            "1) Abra as URLs listadas na evidência em abas separadas e compare manualmente os dados retornados " +
+                                    "(nome, e-mail, pedidos, etc) — confirme que são de pessoas/registros DIFERENTES. 2) Teste uma faixa maior " +
+                                    "de IDs (ex: 1 a 100) pra dimensionar quantos registros estão expostos — isso quantifica o impacto real " +
+                                    "(ex: '847 usuários expostos' é mais forte que 'parece vulnerável'). 3) Se os dados incluem PII, documente " +
+                                    "isso como vazamento de dados em massa, não só como falha técnica."));
                 }
             }
         }

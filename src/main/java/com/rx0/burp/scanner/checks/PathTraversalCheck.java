@@ -72,7 +72,12 @@ public class PathTraversalCheck implements VulnCheck {
                                         "leitura arbitrária de arquivos do servidor.",
                                 "Payload: " + payload,
                                 "Nunca monte caminhos de arquivo a partir de entrada do usuário. Use um mapa fixo de IDs para arquivos " +
-                                        "permitidos (allowlist) e normalize/valide o caminho resultante antes de qualquer acesso ao filesystem."));
+                                        "permitidos (allowlist) e normalize/valide o caminho resultante antes de qualquer acesso ao filesystem.",
+                                "1) No Repeater, reenvie trocando o alvo por arquivos de config da aplicação (ex: ../../../etc/app/config.yml, " +
+                                        "web.xml, .env, wp-config.php — ajuste a quantidade de ../ conforme a profundidade real do servidor). " +
+                                        "2) Se a aplicação for PHP e você suspeitar de LFI real (não só leitura), tente escalar pra RCE via " +
+                                        "log poisoning (ler access.log do Apache/Nginx após injetar PHP no User-Agent) ou via php://filter " +
+                                        "para ler código-fonte em base64. 3) Documente todos os arquivos sensíveis acessíveis."));
                         break; // já confirmado nesse param, não precisa testar os outros payloads
                     }
                 } catch (Exception e) {

@@ -65,7 +65,12 @@ public class XxeCheck implements VulnCheck {
                                     "arbitrários e, em alguns casos, SSRF ou negação de serviço.",
                             "Payload enviado via Content-Type: application/xml | Conteúdo de /etc/passwd encontrado na resposta.",
                             "Desabilite DOCTYPE/entidades externas no parser XML (ex: setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true) " +
-                                    "em Java), ou use um parser que não suporte DTDs externas por padrão."));
+                                    "em Java), ou use um parser que não suporte DTDs externas por padrão.",
+                            "1) No Repeater, reenvie o POST pra " + url + " com o Content-Type application/xml e o payload com DOCTYPE. " +
+                                    "2) Troque o alvo da entidade pra ler outros arquivos (ex: file:///etc/shadow, ou no Windows C:\\Windows\\win.ini, " +
+                                    "ou um arquivo de config da aplicação com credenciais). 3) Para testar SSRF via XXE, troque a entidade por uma " +
+                                    "URL interna (ex: SYSTEM \"http://169.254.169.254/latest/meta-data/\"). 4) Para blind XXE (sem retorno direto), " +
+                                    "use Out-of-Band XXE via Burp Collaborator como canal externo."));
                 } else if (ASSINATURA_ERRO_XXE.matcher(body).find()) {
                     achados.add(new Finding(
                             "Endpoint processa XML com DOCTYPE (XXE não confirmado, requer revisão)",

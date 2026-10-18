@@ -54,7 +54,11 @@ public class CorsMisconfigCheck implements VulnCheck {
                             "O servidor reflete qualquer Origin enviado e permite credentials, permitindo que um site malicioso leia respostas autenticadas da vítima.",
                             "Origin enviado: " + ORIGEM_FORJADA + " | Access-Control-Allow-Origin: " + valor
                                     + " | Access-Control-Allow-Credentials: true",
-                            "Nunca reflita o Origin dinamicamente junto de credentials=true. Use uma allowlist fixa de origens confiáveis."));
+                            "Nunca reflita o Origin dinamicamente junto de credentials=true. Use uma allowlist fixa de origens confiáveis.",
+                            "1) Monte uma página HTML de PoC hospedada em qualquer domínio (ou localmente) com um fetch() usando " +
+                                    "credentials: 'include' contra " + baseUrl + " e mostre a resposta na tela (document.write(await resp.text())). " +
+                                    "2) Se a vítima estiver logada no site alvo e visitar sua página de PoC, o JS consegue ler a resposta " +
+                                    "autenticada dela (dados de conta, tokens, etc) — isso é roubo de sessão cross-origin completo."));
                 } else if (reflete) {
                     achados.add(new Finding(
                             "CORS reflete Origin arbitrário",

@@ -99,7 +99,12 @@ public class JwtWeaknessCheck implements VulnCheck {
                     "Foi encontrado um JWT trafegando para o host alvo com o algoritmo 'none' no header, " +
                             "o que significa que o token não possui assinatura verificável — qualquer payload pode ser forjado.",
                     "Header decodificado: " + headerJson,
-                    "Nunca aceite tokens com alg=none. Force a verificação de um algoritmo específico (ex: RS256) no backend."));
+                    "Nunca aceite tokens com alg=none. Force a verificação de um algoritmo específico (ex: RS256) no backend.",
+                    "1) No Decoder do Burp (ou jwt.io), pegue o token original, edite o payload (ex: mude \"role\":\"user\" pra " +
+                            "\"role\":\"admin\" ou \"sub\" pra outro ID de usuário). 2) Re-encode header e payload em Base64URL, " +
+                            "remova a assinatura (deixe só os dois primeiros segmentos + um ponto final: header.payload.). " +
+                            "3) Envie esse token forjado no header Authorization: Bearer <token> e confirme se o servidor aceita — " +
+                            "isso é bypass completo de autenticação/autorização sem precisar da chave de assinatura."));
         }
 
         if (!payloadLower.contains("\"exp\"")) {

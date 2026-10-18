@@ -76,7 +76,12 @@ public class SstiCheck implements VulnCheck {
                                         "no servidor, o que pode permitir execução remota de código (RCE) dependendo do engine.",
                                 "Payload: " + payload + " | Resultado avaliado encontrado: " + esperado,
                                 "Nunca passe entrada do usuário diretamente para a renderização de templates. Use templates pré-compilados " +
-                                        "com dados apenas como variáveis (nunca como código), e mantenha o motor de template atualizado."));
+                                        "com dados apenas como variáveis (nunca como código), e mantenha o motor de template atualizado.",
+                                "1) Identifique o engine exato: o payload '" + payload + "' que funcionou indica qual sintaxe é aceita. " +
+                                        "2) Use o PayloadsAllTheThings (SSTI) ou o tplmap (https://github.com/epinna/tplmap) apontando pro " +
+                                        "parâmetro '" + param + "' pra identificar o engine automaticamente e tentar RCE. 3) Para Jinja2/Twig " +
+                                        "(payload {{}}), teste escalar pra RCE com algo como {{self.__init__.__globals__.__builtins__.__import__('os').popen('id').read()}} " +
+                                        "(ajuste pro engine certo). 4) Confirme a saída do comando na resposta — isso é execução remota de código."));
                         break; // confirmado nesse param, não precisa testar as outras sintaxes
                     }
                 } catch (Exception e) {

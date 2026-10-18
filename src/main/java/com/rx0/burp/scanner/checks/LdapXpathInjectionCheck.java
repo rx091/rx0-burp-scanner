@@ -84,7 +84,14 @@ public class LdapXpathInjectionCheck implements VulnCheck {
                                 "Payload: " + payload + " | Assinatura detectada: " + p.pattern(),
                                 tipo.equals("LDAP Injection")
                                         ? "Use APIs de LDAP com parâmetros vinculados (bind) em vez de concatenar strings no filtro de busca, e escape caracteres especiais LDAP (*, (, ), \\, NUL)."
-                                        : "Use consultas XPath parametrizadas (XPathExpression com variáveis) em vez de concatenar entrada do usuário na expressão."));
+                                        : "Use consultas XPath parametrizadas (XPathExpression com variáveis) em vez de concatenar entrada do usuário na expressão.",
+                                tipo.equals("LDAP Injection")
+                                        ? "1) No Repeater, teste bypass de autenticação com payload tipo *)(uid=*))(|(uid=* no campo de " +
+                                          "usuário de um formulário de login LDAP. 2) Se autenticar sem senha válida, é bypass completo. " +
+                                          "3) Para extração de dados, use blind LDAP injection testando filtros booleanos incrementais."
+                                        : "1) Teste bypass de login com payload ' or '1'='1 no campo de usuário de um login que use XML/XPath " +
+                                          "como fonte de dados. 2) Para extração blind, use payloads que testam caractere por caractere " +
+                                          "(ex: substring(name,1,1)='a') e observe diferença de comportamento."));
                         return achados; // já confirmado nesse param+tipo
                     }
                 }

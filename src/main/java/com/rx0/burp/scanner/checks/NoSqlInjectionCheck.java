@@ -82,7 +82,11 @@ public class NoSqlInjectionCheck implements VulnCheck {
                             "Baseline: " + corpoBaseline + " -> " + respBaseline.statusCode() +
                                     " | Payload: " + corpoInjetado + " -> " + respInjetado.statusCode(),
                             "Nunca repasse o JSON do usuário diretamente para a query do banco. Valide o tipo de cada campo " +
-                                    "(rejeite objetos onde se espera string) e use bibliotecas de sanitização específicas para NoSQL (ex: mongo-sanitize)."));
+                                    "(rejeite objetos onde se espera string) e use bibliotecas de sanitização específicas para NoSQL (ex: mongo-sanitize).",
+                            "1) Reenvie o POST pra " + url + " com o corpo exato: " + corpoInjetado + " — isso já é o bypass completo, " +
+                                    "você está autenticado como o primeiro usuário que a query encontrar no banco. 2) Pra mirar numa conta " +
+                                    "específica, use {\"username\":\"admin\",\"password\":{\"$ne\":null}} (username exato + senha bypassed). " +
+                                    "3) Capture o token/sessão retornado como prova de takeover de conta."));
                 }
             } catch (Exception e) {
                 api.logging().logToError("[Rx0] Erro no check de NoSQL Injection (" + path + "): " + e.getMessage());

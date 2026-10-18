@@ -95,7 +95,11 @@ public class MassAssignmentCheck implements VulnCheck {
                                         "JSON diretamente ao modelo/entidade sem uma allowlist explícita de campos permitidos.",
                                 "Campo testado: " + nomeCampo + "=" + valorEsperado + " | Confirme manualmente se foi persistido de fato.",
                                 "Nunca faça bind direto do JSON recebido para a entidade do banco. Use DTOs de entrada explícitos " +
-                                        "(allowlist de campos) e nunca aceite alteração de campos sensíveis (role, isAdmin, balance) via endpoint público."));
+                                        "(allowlist de campos) e nunca aceite alteração de campos sensíveis (role, isAdmin, balance) via endpoint público.",
+                                "1) Repita o cadastro com o usuário '" + usuarioTeste + "' e, em seguida, tente LOGAR com essas credenciais " +
+                                        "(username: " + usuarioTeste + " / senha: SenhaTeste123!). 2) Uma vez logado, acesse funcionalidades " +
+                                        "restritas a admin (painel administrativo, endpoints /api/admin/*) pra confirmar se o campo '" + nomeCampo +
+                                        "' realmente elevou o privilégio. 3) Isso demonstra escalação de privilégio completa a partir de um cadastro público."));
                     }
                 }
             } catch (Exception e) {

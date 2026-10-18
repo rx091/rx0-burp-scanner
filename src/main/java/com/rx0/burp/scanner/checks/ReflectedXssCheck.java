@@ -145,6 +145,11 @@ public class ReflectedXssCheck implements VulnCheck {
                         "nesse ponto da aplicação (origem: " + origem + ").",
                 "Payload: " + payload + " | Encontrado verbatim na resposta.",
                 "Faça encoding de saída (HTML entity encoding) de qualquer dado refletido no HTML, valide o Content-Type da resposta, " +
-                        "e implemente CSP como defesa em profundidade.");
+                        "e implemente CSP como defesa em profundidade.",
+                "1) Abra a URL em um navegador: " + url + " 2) Se o payload de teste (<rx0xss>) não executou por ser uma tag " +
+                        "inofensiva, troque por um payload de PoC real, ex: <script>alert(document.cookie)</script> ou " +
+                        "<img src=x onerror=alert(document.domain)> no mesmo parâmetro '" + param + "'. 3) Confirme a execução do " +
+                        "JavaScript (popup do alert) no navegador. 4) Para impacto real, demonstre roubo de cookie/sessão " +
+                        "redirecionando document.cookie para um listener controlado (ex: webhook.site) — sempre documentando como PoC, nunca em produção real sem autorização específica para isso.");
     }
 }

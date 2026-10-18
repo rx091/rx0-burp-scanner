@@ -72,6 +72,7 @@ public class HtmlReportGenerator {
             html.append("    <div class=\"field\"><span class=\"label\">URL:</span> <code>").append(escapeHtml(f.getUrl())).append("</code></div>\n");
             html.append("    <div class=\"field\"><span class=\"label\">Descrição:</span> ").append(escapeHtml(f.getDescricao())).append("</div>\n");
             html.append("    <div class=\"field\"><span class=\"label\">Evidência:</span> <code>").append(escapeHtml(f.getEvidencia())).append("</code></div>\n");
+            html.append("    <div class=\"field exploit\"><span class=\"label\">Modo de exploração:</span> ").append(escapeHtml(f.getModoExploracao())).append("</div>\n");
             html.append("    <div class=\"field\"><span class=\"label\">Recomendação:</span> ").append(escapeHtml(f.getRecomendacao())).append("</div>\n");
             html.append("    <div class=\"field timestamp\">Encontrado em: ").append(f.getEncontradoEmFormatado()).append("</div>\n");
             html.append("  </div>\n");
@@ -144,6 +145,8 @@ public class HtmlReportGenerator {
               .finding-body { margin-top: 12px; font-size: 14px; color: var(--text-dim); }
               .field { margin-top: 8px; }
               .field .label { color: var(--text); font-weight: 600; }
+              .field.exploit { background: #1a1424; border: 1px solid #3a2a5c; border-radius: 8px; padding: 10px 12px; margin-top: 10px; }
+              .field.exploit .label { color: var(--accent); }
               code { background: #0a0c11; border: 1px solid var(--border); padding: 2px 6px; border-radius: 6px; color: #9fe6a0; font-size: 12.5px; word-break: break-all; }
               .timestamp { font-size: 11px; color: #5c6372; margin-top: 10px; }
               .vazio { color: var(--text-dim); font-style: italic; }
