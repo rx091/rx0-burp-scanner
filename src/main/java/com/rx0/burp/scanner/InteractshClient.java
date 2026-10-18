@@ -9,7 +9,7 @@ import com.rx0.burp.model.Severity;
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.OAEPParameterSpec;
-import javax.crypto.spec.MGF1ParameterSpec;
+import java.security.spec.MGF1ParameterSpec;
 import javax.crypto.spec.PSource;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
