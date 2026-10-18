@@ -49,7 +49,7 @@ assinado como *Criado por Rx0 - @rodrigocoutinho91*.
 ### Injeção / inclusão de arquivo / SSRF
 
 - **SSRF**: testa parâmetros que aceitam URL (webhook, callback, avatar, fetch...) contra
-  alvos internos clássicos — incluindo o endpoint de metadata da AWS/GCP e confirma pela
+  alvos internos clássicos incluindo o endpoint de metadata da AWS/GCP e confirma pela
   assinatura de conteúdo que o SERVIDOR fez a requisição.
 - **Path Traversal / LFI**: injeta payloads de travessia de diretório (`../../etc/passwd`,
   variações com encoding e barra dupla, `win.ini`) em parâmetros que servem arquivo/página.
@@ -68,9 +68,9 @@ assinado como *Criado por Rx0 - @rodrigocoutinho91*.
   com 6 payloads em contextos diferentes (tag crua, quebra de atributo, quebra de `<script>`,
   `onerror`/`onload`).
 - **`StoredXssCheck`**: envia o payload via POST para endpoints típicos de comentário/feedback
-  e confirma em uma **segunda requisição separada** (GET) se ele volta sem escaping — ou seja,
+  e confirma em uma **segunda requisição separada** (GET) se ele volta sem escaping ou seja,
   se ficou persistido e atinge qualquer visitante, não só quem enviou.
-- **`DomXssCheck`**: análise ESTÁTICA do HTML/JS da página — procura por uma fonte controlável
+- **`DomXssCheck`**: análise ESTÁTICA do HTML/JS da página procura por uma fonte controlável
   (`location.hash`, `location.search`, `document.URL`...) próxima de um sink perigoso
   (`innerHTML`, `eval`, `document.write`...) no mesmo trecho de código. Não executa o JS de
   verdade, então é só um sinal pra você confirmar manualmente no DevTools.
@@ -79,8 +79,8 @@ assinado como *Criado por Rx0 - @rodrigocoutinho91*.
 
 - **SSTI** (`SstiCheck`): injeta expressões matemáticas em 6 sintaxes de template engine
   (Jinja2/Twig, Freemarker/EL, Thymeleaf/ERB, ERB/EJS, Razor) e confirma se o RESULTADO
-  avaliado aparece na resposta — com baseline anti-falso-positivo.
-- **OS Command Injection** (`OsCommandInjectionCheck`): blind, baseado em tempo — injeta
+  avaliado aparece na resposta com baseline anti-falso-positivo.
+- **OS Command Injection** (`OsCommandInjectionCheck`): blind, baseado em tempo injeta
   comandos de delay (Unix e Windows) e só confirma o achado se o atraso bater em **duas**
   tentativas separadas.
 - **XXE** (`XxeCheck`): envia XML com entidade externa apontando pra `/etc/passwd` em
@@ -107,7 +107,7 @@ certamente não existe (`FalsePositiveGuard`). Se o servidor responder HTTP 200 
 (comportamento típico de SPA com rota catch-all, ex: React Router servindo `index.html` pra
 qualquer URL), os checks de path/endpoint (`SensitivePathsCheck`, `ApiEndpointDiscoveryCheck`,
 `DirectoryListingCheck`, `SourceCodeDisclosureCheck`) comparam cada resposta contra essa
-assinatura e **descartam automaticamente** achados que batem com o padrão de catch-all —
+assinatura e **descartam automaticamente** achados que batem com o padrão de catch-all
 antes esses apps gerariam dezenas de "achados" falsos só porque toda URL retorna 200 com a
 mesma página. Outros checks (SSTI, OS Command Injection) usam suas próprias técnicas de
 confirmação: baseline de conteúdo (SSTI) e dupla confirmação por tempo (OS Command Injection).
@@ -188,7 +188,7 @@ pra download. Passo a passo:
    estar rodando automaticamente (ou clique em **Run workflow** se não iniciar sozinho).
 6. Espere o ícone ficar verde (✅), geralmente leva 1-2 minutos.
 7. Clique no workflow que rodou → role até **Artifacts** → baixe **rx0-vuln-scanner-jar**
-   (vem como um `.zip` contendo o `.jar` dentro — extraia).
+   (vem como um `.zip` contendo o `.jar` dentro extraia).
 8. Instale esse `.jar` no Burp normalmente (Extensions → Installed → Add → Java).
 
 Vantagem: o GitHub compila num ambiente limpo oficial, sem você precisar confiar código seu a
@@ -208,7 +208,7 @@ uma atualização do projeto.
 1. Na aba **Rx0 Scanner**, digite a URL do host autorizado (ex: `https://meu-alvo.com`).
 2. Clique em **Iniciar scan**. A barra de progresso mostra qual check está rodando.
 3. Os achados aparecem em tempo real na tabela (severidade, título, URL).
-4. Ao fim, clique em **Gerar relatório HTML** e escolha onde salvar — o relatório abre em
+4. Ao fim, clique em **Gerar relatório HTML** e escolha onde salvar o relatório abre em
    qualquer navegador, com tema escuro e sua assinatura no rodapé.
 
 > 💡 **Dica para o check de JWT**: antes de rodar o scan, navegue manualmente pela aplicação
