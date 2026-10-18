@@ -36,4 +36,16 @@ public interface VulnCheck {
     default List<Finding> executar(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
         return executar(api, baseUrl);
     }
+
+    /**
+     * Variante ciente do {@link ScanContext} completo (guard + cliente interactsh).
+     * Checks que querem registrar probes de confirmação out-of-band (SSRF, RFI,
+     * XXE, OS Command Injection) devem sobrescrever este método e usar
+     * ctx.interactsh(). O padrão simplesmente delega para a variante com guard,
+     * preservando o comportamento de todos os checks que já existiam antes do
+     * ScanContext ser introduzido.
+     */
+    default List<Finding> executar(MontoyaApi api, String baseUrl, ScanContext ctx) {
+        return executar(api, baseUrl, ctx.guard());
+    }
 }

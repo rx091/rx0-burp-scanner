@@ -47,6 +47,19 @@ public class HtmlReportGenerator {
         html.append("  </div>\n");
         html.append("</header>\n");
 
+        if (!ordenados.isEmpty()) {
+            html.append("<section class=\"top5\">\n<h2>Top 5 riscos</h2>\n<ol class=\"top5-lista\">\n");
+            int limite = Math.min(5, ordenados.size());
+            for (int i = 0; i < limite; i++) {
+                Finding f = ordenados.get(i);
+                html.append("  <li style=\"border-left-color:").append(f.getSeveridade().getColorHex()).append("\">")
+                        .append("<span class=\"sev-inline\" style=\"background:").append(f.getSeveridade().getColorHex()).append("\">")
+                        .append(f.getSeveridade().name()).append("</span> ")
+                        .append(escapeHtml(f.getTitulo())).append("</li>\n");
+            }
+            html.append("</ol>\n</section>\n");
+        }
+
         html.append("<section class=\"resumo\">\n<h2>Resumo por severidade</h2>\n<div class=\"cards\">\n");
         for (Severity s : new Severity[]{Severity.CRITICA, Severity.ALTA, Severity.MEDIA, Severity.BAIXA, Severity.INFO}) {
             html.append("  <div class=\"card\" style=\"border-color:").append(s.getColorHex()).append("\">\n");
@@ -134,6 +147,10 @@ public class HtmlReportGenerator {
               .meta { display: flex; flex-wrap: wrap; gap: 24px; color: var(--text-dim); font-size: 14px; }
               .meta strong { color: var(--text); }
               h2 { font-size: 18px; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-top: 40px; }
+              .top5-lista { list-style: none; margin: 16px 0 0; padding: 0; counter-reset: top5; }
+              .top5-lista li { counter-increment: top5; background: var(--bg-card); border: 1px solid var(--border); border-left-width: 4px; border-radius: 8px; padding: 12px 16px; margin-top: 8px; font-size: 14px; }
+              .top5-lista li::before { content: counter(top5) ". "; font-weight: 700; color: var(--accent); }
+              .sev-inline { font-size: 10px; font-weight: 700; color: #0d0f14; padding: 2px 8px; border-radius: 20px; margin-right: 6px; }
               .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: 18px; }
               .card { background: var(--bg-card); border: 1px solid var(--border); border-left-width: 4px; border-radius: 10px; padding: 16px; text-align: center; }
               .card-num { font-size: 28px; font-weight: 700; }

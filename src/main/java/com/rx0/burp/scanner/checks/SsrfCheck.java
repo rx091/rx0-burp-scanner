@@ -5,6 +5,7 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import com.rx0.burp.model.Finding;
 import com.rx0.burp.model.Severity;
+import com.rx0.burp.scanner.ScanContext;
 import com.rx0.burp.scanner.VulnCheck;
 
 import java.util.ArrayList;
@@ -51,10 +52,46 @@ public class SsrfCheck implements VulnCheck {
         return "SSRF (parâmetros que aceitam URL + metadata de cloud)";
     }
 
+    // Parâmetros usados pra teste com confirmação OOB (subconjunto, pra não gerar
+    // probes demais — a detecção por conteúdo acima já cobre todos os PARAM_NAMES)
+    private static final String[] PARAMS_PARA_OOB = {"url", "webhook", "callback", "src"};
+
     @Override
     public List<Finding> executar(MontoyaApi api, String baseUrl) {
+        return executar(api, baseUrl, (ScanContext) null);
+    }
+
+    @Override
+    public List<Finding> executar(MontoyaApi api, String baseUrl, ScanContext ctx) {
         List<Finding> achados = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+
+        // --- Confirmação OOB via interactsh, quando disponível ---
+        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isDisponivel()) {
+            for (String param : PARAMS_PARA_OOB) {
+                try {
+                    String host = ctx.interactsh().criarProbe(
+                            "SSRF confirmado via interação out-of-band no parâmetro '" + param + "'",
+                            Severity.CRITICA,
+                            base,
+                            "O servidor alvo foi induzido a fazer uma requisição para um domínio único de teste através do " +
+                                    "parâmetro '" + param + "', e essa requisição foi efetivamente recebida — confirmação " +
+                                    "inequívoca de SSRF, mesmo sem metadata de cloud ou serviço local específico exposto.",
+                            "Valide e restrinja destinos de requisições feitas pelo servidor a uma allowlist, bloqueie ranges " +
+                                    "de IP internos/link-local e desabilite redirects automáticos nessas chamadas.",
+                            "1) Use esse mesmo domínio único de teste (regenerável a cada scan) pra confirmar reprodutibilidade. " +
+                                    "2) Troque o payload para apontar pra IPs/portas internas específicas da rede do alvo, " +
+                                    "mantendo o mesmo tipo de canal OOB pra confirmar acesso a serviços internos.");
+                    if (host != null) {
+                        String payload = "http://" + host + "/rx0-ssrf-oob-probe";
+                        String url = base + "/?" + param + "=" + java.net.URLEncoder.encode(payload, "UTF-8");
+                        api.http().sendRequest(HttpRequest.httpRequestFromUrl(url));
+                    }
+                } catch (Exception e) {
+                    api.logging().logToError("[Rx0] Erro ao disparar probe OOB de SSRF (param " + param + "): " + e.getMessage());
+                }
+            }
+        }
 
         for (String param : PARAM_NAMES) {
             for (Map.Entry<String, Pattern> alvo : ALVOS_INTERNOS.entrySet()) {

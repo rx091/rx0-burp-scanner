@@ -100,6 +100,29 @@ assinado como *Criado por Rx0 - @rodrigocoutinho91*.
 - **ViewState / Autocomplete** (`ViewStateAndAutocompleteCheck`): ASP.NET `__VIEWSTATE` sem
   `__VIEWSTATEMAC`, e campos de senha sem `autocomplete="new-password"`.
 
+### Desempenho e eficácia (paralelização + confirmação OOB via interactsh)
+
+- **Paralelização**: os 31 checks agora rodam em um pool de **6 threads simultâneas**
+  (em vez de um atrás do outro), reduzindo bastante o tempo total de scan. O número é
+  deliberadamente moderado pra não sobrecarregar o alvo nem disparar WAF/rate-limiting
+  de forma agressiva.
+- **Confirmação out-of-band via interactsh** (`InteractshClient`): alternativa open-source
+  ao Burp Collaborator (que é exclusivo do Pro), implementada do zero em Java puro — RSA-2048
+  + AES-256 pra registrar e descriptografar interações com servidores públicos interactsh
+  (`oast.pro`, `oast.live`, `oast.site`, `oast.online`, `oast.fun`). Os checks **SSRF**, **OS
+  Command Injection**, **XXE** e **RFI** agora, além da detecção por conteúdo/erro/tempo já
+  existente, disparam um payload adicional apontando pra um domínio único gerado na hora. No
+  final do scan a extensão espera alguns segundos e consulta se o alvo realmente "ligou de
+  volta" — se confirmado, gera um achado adicional com `[CONFIRMADO via OOB]` no título,
+  marcado como inequívoco (não depende de reflexão de conteúdo nem de medição de tempo).
+  Isso é **estritamente aditivo**: se o registro com o interactsh falhar (rede bloqueada,
+  servidor fora do ar), a extensão simplesmente não gera esse achado extra — todo o resto
+  continua funcionando exatamente como antes.
+- **Deduplicação automática**: se dois checks diferentes (ou a confirmação OOB) acharem o
+  mesmo problema (mesmo título + mesma URL), o relatório final mostra só uma vez.
+- **Top 5 riscos**: o relatório agora abre com um resumo dos 5 achados de maior severidade,
+  antes do detalhamento completo.
+
 ### Modo de exploração em cada achado
 
 Todo achado do relatório agora tem uma seção **"Modo de exploração"**, com passo a passo de

