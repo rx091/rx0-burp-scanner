@@ -75,6 +75,43 @@ assinado como *Criado por Rx0 - @rodrigocoutinho91*.
   (`innerHTML`, `eval`, `document.write`...) no mesmo trecho de código. Não executa o JS de
   verdade, então é só um sinal pra você confirmar manualmente no DevTools.
 
+### Mais falhas (baseadas na lista de checks do Burp Scanner)
+
+- **SSTI** (`SstiCheck`): injeta expressões matemáticas em 6 sintaxes de template engine
+  (Jinja2/Twig, Freemarker/EL, Thymeleaf/ERB, ERB/EJS, Razor) e confirma se o RESULTADO
+  avaliado aparece na resposta — com baseline anti-falso-positivo.
+- **OS Command Injection** (`OsCommandInjectionCheck`): blind, baseado em tempo — injeta
+  comandos de delay (Unix e Windows) e só confirma o achado se o atraso bater em **duas**
+  tentativas separadas.
+- **XXE** (`XxeCheck`): envia XML com entidade externa apontando pra `/etc/passwd` em
+  endpoints que aceitam XML.
+- **LDAP Injection / XPath Injection** (`LdapXpathInjectionCheck`): error-based, igual ao
+  SQLi, mas pra esses dois motores de consulta.
+- **Directory Listing** (`DirectoryListingCheck`): detecta listagem de diretório habilitada
+  em pastas comuns (`/uploads/`, `/backup/`, `/assets/`...).
+- **Código-fonte exposto** (`SourceCodeDisclosureCheck`): testa variações de backup/editor
+  (`.bak`, `~`, `.swp`, `.orig`) em cima de nomes comuns (`index`, `config`, `login`...) e
+  confirma por assinatura de código real (PHP/Java/.NET/JSP/SQL) no corpo.
+- **Dados sensíveis no corpo** (`SensitiveDataInBodyCheck`): chave privada, JWK privado, IP
+  interno, possível cartão de crédito/CPF, connection string de banco e vazamento em massa
+  de e-mails (5+ distintos).
+- **CSRF** (`CsrfTokenCheck`): análise estática de formulários POST sem campo hidden de token
+  anti-CSRF.
+- **ViewState / Autocomplete** (`ViewStateAndAutocompleteCheck`): ASP.NET `__VIEWSTATE` sem
+  `__VIEWSTATEMAC`, e campos de senha sem `autocomplete="new-password"`.
+
+### Redução automática de falso-positivo
+
+A extensão calcula, **uma vez por scan**, um baseline pedindo um path aleatório que
+certamente não existe (`FalsePositiveGuard`). Se o servidor responder HTTP 200 pra esse path
+(comportamento típico de SPA com rota catch-all, ex: React Router servindo `index.html` pra
+qualquer URL), os checks de path/endpoint (`SensitivePathsCheck`, `ApiEndpointDiscoveryCheck`,
+`DirectoryListingCheck`, `SourceCodeDisclosureCheck`) comparam cada resposta contra essa
+assinatura e **descartam automaticamente** achados que batem com o padrão de catch-all —
+antes esses apps gerariam dezenas de "achados" falsos só porque toda URL retorna 200 com a
+mesma página. Outros checks (SSTI, OS Command Injection) usam suas próprias técnicas de
+confirmação: baseline de conteúdo (SSTI) e dupla confirmação por tempo (OS Command Injection).
+
 > Isso **não substitui** o Active Scanner do Burp Pro nem uma avaliação manual completa — é um
 > conjunto enxuto e extensível de checks rápidos para triagem inicial. A arquitetura foi pensada
 > pra você ir plugando novos checks com o tempo (veja "Como adicionar um novo check" abaixo).
@@ -206,4 +243,4 @@ rx0-burp-scanner/
 ```
 
 ---
-Criado por **Rx0** - [@rodrigocoutinho91](https://github.com/rodrigocoutinho91)
+Criado por **Rx0** - [@rodrigocoutinho91](https://www.instagram.com/rodrigocoutinho91/)

@@ -5,6 +5,7 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import com.rx0.burp.model.Finding;
 import com.rx0.burp.model.Severity;
+import com.rx0.burp.scanner.FalsePositiveGuard;
 import com.rx0.burp.scanner.VulnCheck;
 
 import java.util.ArrayList;
@@ -54,8 +55,17 @@ public class SensitivePathsCheck implements VulnCheck {
 
     @Override
     public List<Finding> executar(MontoyaApi api, String baseUrl) {
+        return executar(api, baseUrl, FalsePositiveGuard.calcular(api, baseUrl));
+    }
+
+    @Override
+    public List<Finding> executar(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
         List<Finding> achados = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+
+        if (guard.isProvavelCatchAll()) {
+            api.logging().logToOutput("[Rx0] SensitivePathsCheck: catch-all/SPA detectado — filtrando falsos-positivos automaticamente.");
+        }
 
         for (Map.Entry<String, Severity> entry : PATHS.entrySet()) {
             String path = entry.getKey();
@@ -67,6 +77,9 @@ public class SensitivePathsCheck implements VulnCheck {
                 int status = resp.statusCode();
                 String body = resp.bodyToString();
                 boolean vazio = body == null || body.isBlank();
+
+                // Descarta automaticamente se a resposta bate com o padrão de catch-all do baseline
+                if (guard.pareceFalsoPositivo(status, body)) continue;
 
                 // Evita falso-positivo clássico de apps SPA que respondem 200 com a mesma home page pra tudo
                 boolean pareceConteudoReal = !vazio && body.length() > 10;

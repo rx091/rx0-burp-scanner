@@ -80,7 +80,7 @@ public class HtmlReportGenerator {
         html.append("</section>\n");
 
         html.append("<footer>\n");
-        html.append("  <p>Criado por <strong>Rx0</strong> — <a href=\"https://github.com/rodrigocoutinho91\">@rodrigocoutinho91</a></p>\n");
+        html.append("  <p>Criado por <strong>Rx0</strong> — <a href=\"https://www.instagram.com/rodrigocoutinho91/\" target=\"_blank\" rel=\"noopener noreferrer\">@rodrigocoutinho91</a></p>\n");
         html.append("  <p class=\"disclaimer\">Relatório gerado automaticamente por scan próprio executado via extensão Burp Suite. ")
                 .append("Resultados devem ser validados manualmente antes de qualquer ação corretiva ou divulgação. ")
                 .append("Use apenas em ativos para os quais você possui autorização expressa de teste.</p>\n");

@@ -6,6 +6,7 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import com.rx0.burp.model.Finding;
 import com.rx0.burp.model.Severity;
+import com.rx0.burp.scanner.FalsePositiveGuard;
 import com.rx0.burp.scanner.VulnCheck;
 
 import java.util.ArrayList;
@@ -39,6 +40,11 @@ public class ApiEndpointDiscoveryCheck implements VulnCheck {
 
     @Override
     public List<Finding> executar(MontoyaApi api, String baseUrl) {
+        return executar(api, baseUrl, FalsePositiveGuard.calcular(api, baseUrl));
+    }
+
+    @Override
+    public List<Finding> executar(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
         List<Finding> achados = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
@@ -52,12 +58,14 @@ public class ApiEndpointDiscoveryCheck implements VulnCheck {
                 int status = resp.statusCode();
                 if (status != 200) continue;
 
+                String body = resp.bodyToString();
+                if (guard.pareceFalsoPositivo(status, body)) continue;
+
                 Optional<HttpHeader> contentType = resp.headers().stream()
                         .filter(h -> h.name().equalsIgnoreCase("Content-Type"))
                         .findFirst();
                 boolean pareceJson = contentType.isPresent() && contentType.get().value().toLowerCase().contains("json");
 
-                String body = resp.bodyToString();
                 boolean temConteudo = body != null && body.trim().length() > 2
                         && (body.trim().startsWith("{") || body.trim().startsWith("["));
 

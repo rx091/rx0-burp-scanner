@@ -23,4 +23,17 @@ public interface VulnCheck {
      * @return lista de achados (pode ser vazia)
      */
     List<Finding> executar(MontoyaApi api, String baseUrl);
+
+    /**
+     * Variante ciente de falso-positivo: recebe o {@link FalsePositiveGuard} já
+     * calculado uma vez para o scan inteiro. Checks que testam paths/endpoints
+     * (onde o risco de falso-positivo por catch-all/SPA é maior) devem
+     * sobrescrever este método e usar o guard para filtrar achados antes de
+     * devolvê-los. Checks que não se beneficiam disso (XSS, SQLi, headers...)
+     * não precisam sobrescrever — o padrão simplesmente ignora o guard e chama
+     * o executar(api, baseUrl) de sempre.
+     */
+    default List<Finding> executar(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
+        return executar(api, baseUrl);
+    }
 }

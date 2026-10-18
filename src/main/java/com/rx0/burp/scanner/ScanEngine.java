@@ -5,25 +5,34 @@ import com.rx0.burp.model.Finding;
 import com.rx0.burp.scanner.checks.ApiEndpointDiscoveryCheck;
 import com.rx0.burp.scanner.checks.CookieFlagsCheck;
 import com.rx0.burp.scanner.checks.CorsMisconfigCheck;
+import com.rx0.burp.scanner.checks.CsrfTokenCheck;
+import com.rx0.burp.scanner.checks.DirectoryListingCheck;
 import com.rx0.burp.scanner.checks.DomXssCheck;
 import com.rx0.burp.scanner.checks.ExcessiveDataExposureCheck;
 import com.rx0.burp.scanner.checks.GraphqlIntrospectionCheck;
 import com.rx0.burp.scanner.checks.HttpMethodsCheck;
 import com.rx0.burp.scanner.checks.IdorSequentialCheck;
 import com.rx0.burp.scanner.checks.JwtWeaknessCheck;
+import com.rx0.burp.scanner.checks.LdapXpathInjectionCheck;
 import com.rx0.burp.scanner.checks.MassAssignmentCheck;
 import com.rx0.burp.scanner.checks.NoSqlInjectionCheck;
 import com.rx0.burp.scanner.checks.OpenRedirectCheck;
+import com.rx0.burp.scanner.checks.OsCommandInjectionCheck;
 import com.rx0.burp.scanner.checks.PathTraversalCheck;
 import com.rx0.burp.scanner.checks.RateLimitCheck;
 import com.rx0.burp.scanner.checks.ReflectedXssCheck;
 import com.rx0.burp.scanner.checks.RfiCheck;
 import com.rx0.burp.scanner.checks.SecurityHeadersCheck;
+import com.rx0.burp.scanner.checks.SensitiveDataInBodyCheck;
 import com.rx0.burp.scanner.checks.SensitivePathsCheck;
+import com.rx0.burp.scanner.checks.SourceCodeDisclosureCheck;
 import com.rx0.burp.scanner.checks.SqlErrorCheck;
 import com.rx0.burp.scanner.checks.SsrfCheck;
+import com.rx0.burp.scanner.checks.SstiCheck;
 import com.rx0.burp.scanner.checks.StoredXssCheck;
 import com.rx0.burp.scanner.checks.VerboseApiErrorCheck;
+import com.rx0.burp.scanner.checks.ViewStateAndAutocompleteCheck;
+import com.rx0.burp.scanner.checks.XxeCheck;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -66,6 +75,16 @@ public class ScanEngine {
         checks.add(new RfiCheck());
         checks.add(new NoSqlInjectionCheck());
         checks.add(new MassAssignmentCheck());
+        // --- Baseados na lista de checks do Burp Scanner (OS cmd, XXE, SSTI, LDAP/XPath...) ---
+        checks.add(new OsCommandInjectionCheck());
+        checks.add(new XxeCheck());
+        checks.add(new SstiCheck());
+        checks.add(new LdapXpathInjectionCheck());
+        checks.add(new DirectoryListingCheck());
+        checks.add(new SourceCodeDisclosureCheck());
+        checks.add(new SensitiveDataInBodyCheck());
+        checks.add(new CsrfTokenCheck());
+        checks.add(new ViewStateAndAutocompleteCheck());
     }
 
     public int totalDeChecks() {
@@ -81,6 +100,11 @@ public class ScanEngine {
      */
     public List<Finding> executarScanCompleto(MontoyaApi api, String baseUrl, BiConsumer<String, Integer> progressoCb) {
         List<Finding> todosOsAchados = new ArrayList<>();
+
+        // Calcula UMA VEZ o baseline de falso-positivo (detecção de catch-all/SPA)
+        // e passa pra todos os checks — os que não usam isso simplesmente ignoram.
+        FalsePositiveGuard guard = FalsePositiveGuard.calcular(api, baseUrl);
+
         int i = 0;
         for (VulnCheck check : checks) {
             i++;
@@ -88,7 +112,7 @@ public class ScanEngine {
                 progressoCb.accept(check.nome(), i);
             }
             try {
-                List<Finding> achados = check.executar(api, baseUrl);
+                List<Finding> achados = check.executar(api, baseUrl, guard);
                 todosOsAchados.addAll(achados);
             } catch (Exception e) {
                 api.logging().logToError("[Rx0] Falha ao executar check '" + check.nome() + "': " + e.getMessage());
