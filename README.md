@@ -1,4 +1,4 @@
-# Rx0 Vulnerability Scanner — Extensão para Burp Suite
+# Rx0 Vulnerability Scanner - Extensão para Burp Suite
 
 Extensão em **Java** (Montoya API) para Burp Suite **Community/Pro** que roda uma bateria de
 checks de segurança contra um host autorizado e gera um **relatório HTML com tema escuro**,
