@@ -100,6 +100,53 @@ assinado como *Criado por Rx0 - @rodrigocoutinho91*.
 - **ViewState / Autocomplete** (`ViewStateAndAutocompleteCheck`): ASP.NET `__VIEWSTATE` sem
   `__VIEWSTATEMAC`, e campos de senha sem `autocomplete="new-password"`.
 
+### Mais uma leva: fingerprint, host header, upload, cache poisoning, lógica de negócio
+
+- **`TechFingerprintCheck`** (INFO): identifica CMS/framework (WordPress, Laravel, Django,
+  Rails, ASP.NET, React, Angular, Vue...) via assinaturas em HTML/cookies, pra direcionar o
+  resto do teste manual.
+- **`HostHeaderInjectionCheck`**: testa se o servidor confia cegamente no header `Host`/
+  `X-Forwarded-Host` — pode levar a cache poisoning, link de reset de senha envenenado, ou
+  SSRF interno.
+- **`FileUploadCheck`**: envia um arquivo com extensão dupla (`.php.jpg`) disfarçado de
+  imagem pra endpoints de upload comuns, e reporta se foi aceito — primeiro passo clássico
+  pra Unrestricted File Upload / RCE.
+- **`WebCachePoisoningCheck`**: testa headers "unkeyed" (`X-Forwarded-Host`, `X-Forwarded-
+  Scheme`...) que afetam o conteúdo mas não a chave de cache — detecta a CONDIÇÃO de risco
+  (reflexão + cache presente); confirmar o envenenamento de fato fica como passo manual
+  (documentado no "Modo de exploração" do achado).
+- **`BusinessLogicCheck`**: heurísticas básicas de e-commerce — testa quantidade negativa e
+  preço manipulado diretamente no payload de carrinho/checkout.
+- **JWT Algorithm Confusion** (adicionado ao `JwtWeaknessCheck` existente): quando o JWT usa
+  RS256/384/512, busca a chave pública em endpoints JWKS comuns (`/.well-known/jwks.json`) e,
+  se encontrar, **gera um token forjado de verdade** assinado em HS256 usando a chave pública
+  como segredo HMAC — o token pronto vem no campo "Modo de exploração" pra você testar direto
+  no Repeater contra um endpoint protegido.
+
+### Crawling leve (parâmetros reais em vez de só nomes chutados)
+
+`CrawlerLeve` navega a página inicial UMA VEZ por scan e extrai nomes de parâmetros reais
+(de links `?param=` e campos `<input name="...">` de formulário), disponibilizando isso via
+`ScanContext` pra qualquer check usar — complementa (não substitui) a lista de nomes comuns
+que cada check já testa.
+
+### Scan autenticado e modo stealth
+
+- **Cookie de sessão**: campo novo na aba, opcional — preenchendo com algo tipo
+  `sessionid=abc123`, esse valor é enviado no header `Cookie` em toda requisição dos checks
+  que usam `ScanContext` (hoje: os 4 checks de confirmação OOB + os 5 novos desta leva). Isso
+  abre a superfície que fica atrás de login.
+- **Modo stealth**: checkbox que reduz o scan pra 1 thread só com um pequeno delay entre
+  checks, em vez da paralelização agressiva padrão — útil contra WAF sensível ou quando o
+  cliente pede um ritmo mais discreto.
+
+### Exportação em JSON e CSV
+
+Além do relatório HTML, agora dá pra exportar em **JSON** (`JsonReportGenerator` — pra
+integrar com outras ferramentas/pipelines) e **CSV** (`CsvReportGenerator` — pra importar
+direto numa planilha de tracking de findings). Três botões na aba: "Relatório HTML",
+"Exportar JSON", "Exportar CSV".
+
 ### Desempenho e eficácia (paralelização + confirmação OOB via interactsh)
 
 - **Paralelização**: os 31 checks agora rodam em um pool de **6 threads simultâneas**

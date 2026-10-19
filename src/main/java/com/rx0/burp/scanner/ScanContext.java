@@ -12,10 +12,14 @@ public class ScanContext {
 
     private final FalsePositiveGuard guard;
     private final InteractshClient interactsh;
+    private final CrawlerLeve crawler;
+    private final String cookieAutenticacao; // pode ser null/vazio — scan sem sessão
 
-    public ScanContext(FalsePositiveGuard guard, InteractshClient interactsh) {
+    public ScanContext(FalsePositiveGuard guard, InteractshClient interactsh, CrawlerLeve crawler, String cookieAutenticacao) {
         this.guard = guard;
         this.interactsh = interactsh;
+        this.crawler = crawler;
+        this.cookieAutenticacao = cookieAutenticacao;
     }
 
     public FalsePositiveGuard guard() {
@@ -24,5 +28,26 @@ public class ScanContext {
 
     public InteractshClient interactsh() {
         return interactsh;
+    }
+
+    public CrawlerLeve crawler() {
+        return crawler;
+    }
+
+    /** @return o valor do header Cookie a aplicar nas requisições, ou null se não configurado. */
+    public String cookieAutenticacao() {
+        return (cookieAutenticacao == null || cookieAutenticacao.isBlank()) ? null : cookieAutenticacao;
+    }
+
+    public boolean temAutenticacao() {
+        return cookieAutenticacao() != null;
+    }
+
+    /** Aplica o cookie de autenticação (se configurado) numa requisição. Uso: req = ctx.comAuth(req). */
+    public burp.api.montoya.http.message.requests.HttpRequest comAuth(burp.api.montoya.http.message.requests.HttpRequest req) {
+        if (temAutenticacao()) {
+            return req.withAddedHeader("Cookie", cookieAutenticacao());
+        }
+        return req;
     }
 }

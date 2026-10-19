@@ -3,13 +3,16 @@ package com.rx0.burp.scanner;
 import burp.api.montoya.MontoyaApi;
 import com.rx0.burp.model.Finding;
 import com.rx0.burp.scanner.checks.ApiEndpointDiscoveryCheck;
+import com.rx0.burp.scanner.checks.BusinessLogicCheck;
 import com.rx0.burp.scanner.checks.CookieFlagsCheck;
 import com.rx0.burp.scanner.checks.CorsMisconfigCheck;
 import com.rx0.burp.scanner.checks.CsrfTokenCheck;
 import com.rx0.burp.scanner.checks.DirectoryListingCheck;
 import com.rx0.burp.scanner.checks.DomXssCheck;
 import com.rx0.burp.scanner.checks.ExcessiveDataExposureCheck;
+import com.rx0.burp.scanner.checks.FileUploadCheck;
 import com.rx0.burp.scanner.checks.GraphqlIntrospectionCheck;
+import com.rx0.burp.scanner.checks.HostHeaderInjectionCheck;
 import com.rx0.burp.scanner.checks.HttpMethodsCheck;
 import com.rx0.burp.scanner.checks.IdorSequentialCheck;
 import com.rx0.burp.scanner.checks.JwtWeaknessCheck;
@@ -30,8 +33,10 @@ import com.rx0.burp.scanner.checks.SqlErrorCheck;
 import com.rx0.burp.scanner.checks.SsrfCheck;
 import com.rx0.burp.scanner.checks.SstiCheck;
 import com.rx0.burp.scanner.checks.StoredXssCheck;
+import com.rx0.burp.scanner.checks.TechFingerprintCheck;
 import com.rx0.burp.scanner.checks.VerboseApiErrorCheck;
 import com.rx0.burp.scanner.checks.ViewStateAndAutocompleteCheck;
+import com.rx0.burp.scanner.checks.WebCachePoisoningCheck;
 import com.rx0.burp.scanner.checks.XxeCheck;
 
 import java.util.ArrayList;
@@ -105,10 +110,21 @@ public class ScanEngine {
         checks.add(new SensitiveDataInBodyCheck());
         checks.add(new CsrfTokenCheck());
         checks.add(new ViewStateAndAutocompleteCheck());
+        // --- Mais uma leva de melhorias: fingerprint, host header, upload, cache poisoning, lógica de negócio ---
+        checks.add(new TechFingerprintCheck());
+        checks.add(new HostHeaderInjectionCheck());
+        checks.add(new FileUploadCheck());
+        checks.add(new WebCachePoisoningCheck());
+        checks.add(new BusinessLogicCheck());
     }
 
     public int totalDeChecks() {
         return checks.size();
+    }
+
+    /** Variante retrocompatível (sem autenticação, sem modo stealth). */
+    public List<Finding> executarScanCompleto(MontoyaApi api, String baseUrl, BiConsumer<String, Integer> progressoCb) {
+        return executarScanCompleto(api, baseUrl, progressoCb, null, false);
     }
 
     /**
@@ -118,23 +134,33 @@ public class ScanEngine {
      * @param progressoCb   callback(nomeDoCheckConcluido, quantidadeConcluidaAteAgora) —
      *                      chamado quando CADA check termina (ordem não é mais
      *                      sequencial por causa da paralelização)
+     * @param cookieAutenticacao valor a enviar no header Cookie em toda requisição
+     *                            (ex: "sessionid=abc123; outro=valor"), ou null/vazio
+     *                            para scan sem sessão (comportamento padrão de sempre)
+     * @param modoStealth   se true, roda com 1 thread só e um pequeno delay entre
+     *                      checks, pra reduzir a chance de disparar WAF/rate-limit
      * @return lista consolidada e deduplicada de achados de todos os checks
      */
-    public List<Finding> executarScanCompleto(MontoyaApi api, String baseUrl, BiConsumer<String, Integer> progressoCb) {
+    public List<Finding> executarScanCompleto(MontoyaApi api, String baseUrl, BiConsumer<String, Integer> progressoCb,
+                                               String cookieAutenticacao, boolean modoStealth) {
         List<Finding> achadosTotais = Collections.synchronizedList(new ArrayList<>());
 
-        // Calcula UMA VEZ o baseline de falso-positivo e inicia UMA VEZ o cliente OOB.
+        // Calcula UMA VEZ o baseline de falso-positivo, roda o crawler leve e inicia o cliente OOB.
         FalsePositiveGuard guard = FalsePositiveGuard.calcular(api, baseUrl);
+        CrawlerLeve crawler = CrawlerLeve.rastrear(api, baseUrl);
         InteractshClient interactsh = InteractshClient.iniciar(api);
-        ScanContext ctx = new ScanContext(guard, interactsh);
+        ScanContext ctx = new ScanContext(guard, interactsh, crawler, cookieAutenticacao);
 
         AtomicInteger concluidos = new AtomicInteger(0);
-        int threads = Math.max(1, Math.min(THREADS_SIMULTANEAS, checks.size()));
+        int threads = modoStealth ? 1 : Math.max(1, Math.min(THREADS_SIMULTANEAS, checks.size()));
         ExecutorService pool = Executors.newFixedThreadPool(threads);
 
         for (VulnCheck check : checks) {
             pool.submit(() -> {
                 try {
+                    if (modoStealth) {
+                        Thread.sleep(800); // pequeno respiro entre checks em modo discreto
+                    }
                     List<Finding> achados = check.executar(api, baseUrl, ctx);
                     achadosTotais.addAll(achados);
                 } catch (Exception e) {
