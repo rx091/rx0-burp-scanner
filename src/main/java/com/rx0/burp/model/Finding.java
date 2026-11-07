@@ -4,64 +4,65 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * Representa uma falha/achado encontrado durante o scan.
- * Criado por Rx0 - @rodrigocoutinho91
+ * Represents a finding/vulnerability discovered during the scan.
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class Finding {
 
-    private final String titulo;
-    private final Severity severidade;
+    private final String title;
+    private final Severity severity;
     private final String url;
-    private final String descricao;
-    private final String evidencia;
-    private final String recomendacao;
-    private final String modoExploracao;
-    private final LocalDateTime encontradoEm;
+    private final String description;
+    private final String evidence;
+    private final String recommendation;
+    private final String exploitationSteps;
+    private final LocalDateTime foundAt;
 
     /**
-     * Construtor completo — inclui o modo de exploração (passo a passo de como
-     * reproduzir/validar manualmente o achado). Prefira este construtor para
-     * achados de severidade CRITICA/ALTA, onde o passo a passo tem mais valor.
+     * Full constructor — includes explicit exploitation steps (a step-by-step
+     * guide on how to manually reproduce/validate the finding). Prefer this
+     * constructor for CRITICAL/HIGH severity findings, where the walkthrough
+     * adds the most value.
      */
-    public Finding(String titulo, Severity severidade, String url, String descricao,
-                    String evidencia, String recomendacao, String modoExploracao) {
-        this.titulo = titulo;
-        this.severidade = severidade;
+    public Finding(String title, Severity severity, String url, String description,
+                    String evidence, String recommendation, String exploitationSteps) {
+        this.title = title;
+        this.severity = severity;
         this.url = url;
-        this.descricao = descricao;
-        this.evidencia = evidencia;
-        this.recomendacao = recomendacao;
-        this.modoExploracao = (modoExploracao == null || modoExploracao.isBlank())
-                ? modoExploracaoPadrao(url, evidencia)
-                : modoExploracao;
-        this.encontradoEm = LocalDateTime.now();
+        this.description = description;
+        this.evidence = evidence;
+        this.recommendation = recommendation;
+        this.exploitationSteps = (exploitationSteps == null || exploitationSteps.isBlank())
+                ? defaultExploitationSteps(url, evidence)
+                : exploitationSteps;
+        this.foundAt = LocalDateTime.now();
     }
 
     /**
-     * Construtor retrocompatível (sem modo de exploração explícito) — gera um
-     * modo de exploração genérico a partir da URL e evidência já coletadas.
+     * Backward-compatible constructor (no explicit exploitation steps) — generates
+     * a generic exploitation walkthrough from the URL and evidence already collected.
      */
-    public Finding(String titulo, Severity severidade, String url, String descricao,
-                    String evidencia, String recomendacao) {
-        this(titulo, severidade, url, descricao, evidencia, recomendacao, null);
+    public Finding(String title, Severity severity, String url, String description,
+                    String evidence, String recommendation) {
+        this(title, severity, url, description, evidence, recommendation, null);
     }
 
-    private static String modoExploracaoPadrao(String url, String evidencia) {
-        return "Reproduza manualmente a requisição que gerou este achado (URL: " + url + "). " +
-                "Use o Repeater do Burp para reenviar a requisição e observar a evidência descrita (" +
-                (evidencia != null && evidencia.length() > 80 ? evidencia.substring(0, 80) + "..." : evidencia) +
-                ") diretamente na resposta, confirmando o comportamento antes de qualquer ação corretiva.";
+    private static String defaultExploitationSteps(String url, String evidence) {
+        return "Manually reproduce the request that produced this finding (URL: " + url + "). " +
+                "Use Burp Repeater to resend the request and observe the described evidence (" +
+                (evidence != null && evidence.length() > 80 ? evidence.substring(0, 80) + "..." : evidence) +
+                ") directly in the response, confirming the behavior before any remediation action.";
     }
 
-    public String getTitulo() { return titulo; }
-    public Severity getSeveridade() { return severidade; }
+    public String getTitle() { return title; }
+    public Severity getSeverity() { return severity; }
     public String getUrl() { return url; }
-    public String getDescricao() { return descricao; }
-    public String getEvidencia() { return evidencia; }
-    public String getRecomendacao() { return recomendacao; }
-    public String getModoExploracao() { return modoExploracao; }
+    public String getDescription() { return description; }
+    public String getEvidence() { return evidence; }
+    public String getRecommendation() { return recommendation; }
+    public String getExploitationSteps() { return exploitationSteps; }
 
-    public String getEncontradoEmFormatado() {
-        return encontradoEm.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"));
+    public String getFoundAtFormatted() {
+        return foundAt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     }
 }

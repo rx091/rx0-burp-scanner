@@ -11,36 +11,36 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Heurística leve de IDOR (API1:2023 Broken Object Level Authorization):
- * acessa IDs sequenciais em paths de API comuns (/api/users/{id}, /api/orders/{id}...)
- * SEM nenhuma credencial e verifica se objetos DIFERENTES são retornados com 200,
- * o que sugere ausência de checagem de ownership. É apenas um sinal — requer
- * validação manual, pois pode ser dado público por design.
+ * Light IDOR heuristic (API1:2023 Broken Object Level Authorization):
+ * accesses sequential IDs on common API paths (/api/users/{id}, /api/orders/{id}...)
+ * WITHOUT any credentials and checks whether DIFFERENT objects are returned with
+ * 200, which suggests an absent ownership check. This is only a signal — it
+ * requires manual validation, since the data may be public by design.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class IdorSequentialCheck implements VulnCheck {
 
-    private static final String[] RECURSOS = {"/api/users/", "/api/v1/users/", "/api/orders/", "/api/accounts/"};
+    private static final String[] RESOURCES = {"/api/users/", "/api/v1/users/", "/api/orders/", "/api/accounts/"};
     private static final int[] IDS = {1, 2, 3};
 
     @Override
-    public String nome() {
-        return "IDOR em endpoints de API (probe sequencial)";
+    public String name() {
+        return "IDOR on API endpoints (sequential probe)";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
-        for (String recurso : RECURSOS) {
-            List<String> corposObtidos = new ArrayList<>();
-            List<String> urlsComSucesso = new ArrayList<>();
+        for (String resource : RESOURCES) {
+            List<String> bodiesObtained = new ArrayList<>();
+            List<String> successfulUrls = new ArrayList<>();
 
             for (int id : IDS) {
                 try {
-                    String url = base + recurso + id;
+                    String url = base + resource + id;
                     HttpRequest req = HttpRequest.httpRequestFromUrl(url)
                             .withAddedHeader("Accept", "application/json");
                     HttpResponse resp = api.http().sendRequest(req).response();
@@ -50,38 +50,38 @@ public class IdorSequentialCheck implements VulnCheck {
                         String body = resp.bodyToString();
                         if (body != null && body.trim().length() > 2
                                 && (body.trim().startsWith("{") || body.trim().startsWith("["))) {
-                            corposObtidos.add(body);
-                            urlsComSucesso.add(url);
+                            bodiesObtained.add(body);
+                            successfulUrls.add(url);
                         }
                     }
                 } catch (Exception e) {
-                    api.logging().logToError("[Rx0] Erro no probe de IDOR (" + recurso + id + "): " + e.getMessage());
+                    api.logging().logToError("[Rx0] Error in IDOR probe (" + resource + id + "): " + e.getMessage());
                 }
             }
 
-            // Se pelo menos 2 IDs diferentes retornaram 200 com corpos DIFERENTES entre si,
-            // sem nenhuma autenticação, é um forte indício de BOLA.
-            if (corposObtidos.size() >= 2) {
-                boolean corposDiferentes = !corposObtidos.get(0).equals(corposObtidos.get(1));
-                if (corposDiferentes) {
-                    achados.add(new Finding(
-                            "Possível IDOR / BOLA em " + recurso + "{id}",
-                            Severity.CRITICA,
-                            String.join(" , ", urlsComSucesso),
-                            "Múltiplos IDs sequenciais retornaram HTTP 200 com objetos de dados DIFERENTES entre si, sem envio de " +
-                                    "nenhuma credencial. Isso sugere que o endpoint não valida se o solicitante tem permissão para " +
-                                    "acessar aquele objeto específico (Broken Object Level Authorization — API1:2023).",
-                            "IDs testados: " + IDS.length + " | URLs com 200 e conteúdo: " + urlsComSucesso,
-                            "Implemente verificação de ownership/permissão em toda operação que recebe um ID de objeto, " +
-                                    "e exija autenticação nesses endpoints.",
-                            "1) Abra as URLs listadas na evidência em abas separadas e compare manualmente os dados retornados " +
-                                    "(nome, e-mail, pedidos, etc) — confirme que são de pessoas/registros DIFERENTES. 2) Teste uma faixa maior " +
-                                    "de IDs (ex: 1 a 100) pra dimensionar quantos registros estão expostos — isso quantifica o impacto real " +
-                                    "(ex: '847 usuários expostos' é mais forte que 'parece vulnerável'). 3) Se os dados incluem PII, documente " +
-                                    "isso como vazamento de dados em massa, não só como falha técnica."));
+            // If at least 2 different IDs returned 200 with DIFFERENT bodies from each other,
+            // with no authentication at all, that's a strong sign of BOLA.
+            if (bodiesObtained.size() >= 2) {
+                boolean differentBodies = !bodiesObtained.get(0).equals(bodiesObtained.get(1));
+                if (differentBodies) {
+                    findings.add(new Finding(
+                            "Possible IDOR / BOLA at " + resource + "{id}",
+                            Severity.CRITICAL,
+                            String.join(" , ", successfulUrls),
+                            "Multiple sequential IDs returned HTTP 200 with DIFFERENT data objects from each other, with no " +
+                                    "credentials sent at all. This suggests the endpoint does not validate whether the requester has " +
+                                    "permission to access that specific object (Broken Object Level Authorization — API1:2023).",
+                            "IDs tested: " + IDS.length + " | URLs with 200 and content: " + successfulUrls,
+                            "Implement ownership/permission checks on every operation that receives an object ID, " +
+                                    "and require authentication on those endpoints.",
+                            "1) Open the URLs listed in the evidence in separate tabs and manually compare the returned data " +
+                                    "(name, email, orders, etc) — confirm they belong to DIFFERENT people/records. 2) Test a wider ID range " +
+                                    "(e.g. 1 to 100) to gauge how many records are exposed — this quantifies the real impact " +
+                                    "(e.g. '847 users exposed' is stronger than 'looks vulnerable'). 3) If the data includes PII, document " +
+                                    "this as a mass data leak, not just a technical flaw."));
                 }
             }
         }
-        return achados;
+        return findings;
     }
 }

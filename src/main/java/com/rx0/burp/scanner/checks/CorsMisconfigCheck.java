@@ -13,27 +13,27 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Envia um Origin forjado e verifica se o servidor reflete esse Origin
- * em Access-Control-Allow-Origin, especialmente junto de credentials=true.
- * Criado por Rx0 - @rodrigocoutinho91
+ * Sends a forged Origin and checks whether the server reflects that Origin
+ * back in Access-Control-Allow-Origin, especially alongside credentials=true.
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class CorsMisconfigCheck implements VulnCheck {
 
-    private static final String ORIGEM_FORJADA = "https://rx0-cors-test.evil.example";
+    private static final String FORGED_ORIGIN = "https://rx0-cors-test.evil.example";
 
     @Override
-    public String nome() {
-        return "Configuração de CORS";
+    public String name() {
+        return "CORS configuration";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         try {
             HttpRequest req = HttpRequest.httpRequestFromUrl(baseUrl)
-                    .withAddedHeader("Origin", ORIGEM_FORJADA);
+                    .withAddedHeader("Origin", FORGED_ORIGIN);
             HttpResponse resp = api.http().sendRequest(req).response();
-            if (resp == null) return achados;
+            if (resp == null) return findings;
 
             Optional<HttpHeader> allowOrigin = resp.headers().stream()
                     .filter(h -> h.name().equalsIgnoreCase("Access-Control-Allow-Origin"))
@@ -43,41 +43,41 @@ public class CorsMisconfigCheck implements VulnCheck {
                     .findFirst();
 
             if (allowOrigin.isPresent()) {
-                String valor = allowOrigin.get().value();
-                boolean reflete = valor.equals(ORIGEM_FORJADA);
-                boolean credenciais = allowCreds.isPresent() && allowCreds.get().value().equalsIgnoreCase("true");
+                String value = allowOrigin.get().value();
+                boolean reflected = value.equals(FORGED_ORIGIN);
+                boolean credentials = allowCreds.isPresent() && allowCreds.get().value().equalsIgnoreCase("true");
 
-                if (reflete && credenciais) {
-                    achados.add(new Finding(
-                            "CORS mal configurado: Origin refletido com credentials=true",
-                            Severity.CRITICA, baseUrl,
-                            "O servidor reflete qualquer Origin enviado e permite credentials, permitindo que um site malicioso leia respostas autenticadas da vítima.",
-                            "Origin enviado: " + ORIGEM_FORJADA + " | Access-Control-Allow-Origin: " + valor
+                if (reflected && credentials) {
+                    findings.add(new Finding(
+                            "Misconfigured CORS: Origin reflected with credentials=true",
+                            Severity.CRITICAL, baseUrl,
+                            "The server reflects any Origin sent and allows credentials, letting a malicious site read the victim's authenticated responses.",
+                            "Origin sent: " + FORGED_ORIGIN + " | Access-Control-Allow-Origin: " + value
                                     + " | Access-Control-Allow-Credentials: true",
-                            "Nunca reflita o Origin dinamicamente junto de credentials=true. Use uma allowlist fixa de origens confiáveis.",
-                            "1) Monte uma página HTML de PoC hospedada em qualquer domínio (ou localmente) com um fetch() usando " +
-                                    "credentials: 'include' contra " + baseUrl + " e mostre a resposta na tela (document.write(await resp.text())). " +
-                                    "2) Se a vítima estiver logada no site alvo e visitar sua página de PoC, o JS consegue ler a resposta " +
-                                    "autenticada dela (dados de conta, tokens, etc) — isso é roubo de sessão cross-origin completo."));
-                } else if (reflete) {
-                    achados.add(new Finding(
-                            "CORS reflete Origin arbitrário",
-                            Severity.MEDIA, baseUrl,
-                            "O servidor aceita e reflete qualquer Origin em Access-Control-Allow-Origin.",
-                            "Origin enviado: " + ORIGEM_FORJADA + " | Access-Control-Allow-Origin: " + valor,
-                            "Restrinja Access-Control-Allow-Origin a uma lista de origens confiáveis."));
-                } else if (valor.equals("*") && credenciais) {
-                    achados.add(new Finding(
-                            "CORS com wildcard (*) e credentials=true",
-                            Severity.ALTA, baseUrl,
-                            "Essa combinação é inválida por spec, mas quando ocorre indica configuração perigosa.",
+                            "Never dynamically reflect the Origin alongside credentials=true. Use a fixed allowlist of trusted origins.",
+                            "1) Build a PoC HTML page (hosted on any domain, or locally) with a fetch() using " +
+                                    "credentials: 'include' against " + baseUrl + " and print the response to the page (document.write(await resp.text())). " +
+                                    "2) If the victim is logged in to the target site and visits your PoC page, the JS can read their " +
+                                    "authenticated response (account data, tokens, etc) — this is a complete cross-origin session theft."));
+                } else if (reflected) {
+                    findings.add(new Finding(
+                            "CORS reflects an arbitrary Origin",
+                            Severity.MEDIUM, baseUrl,
+                            "The server accepts and reflects any Origin in Access-Control-Allow-Origin.",
+                            "Origin sent: " + FORGED_ORIGIN + " | Access-Control-Allow-Origin: " + value,
+                            "Restrict Access-Control-Allow-Origin to a list of trusted origins."));
+                } else if (value.equals("*") && credentials) {
+                    findings.add(new Finding(
+                            "CORS with wildcard (*) and credentials=true",
+                            Severity.HIGH, baseUrl,
+                            "This combination is invalid per spec, but when it occurs it indicates a dangerous configuration.",
                             "Access-Control-Allow-Origin: * | Allow-Credentials: true",
-                            "Use uma origem explícita (nunca *) quando credentials estiver habilitado."));
+                            "Use an explicit origin (never *) whenever credentials are enabled."));
                 }
             }
         } catch (Exception e) {
-            api.logging().logToError("[Rx0] Erro no check de CORS: " + e.getMessage());
+            api.logging().logToError("[Rx0] Error in CORS check: " + e.getMessage());
         }
-        return achados;
+        return findings;
     }
 }

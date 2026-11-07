@@ -11,27 +11,27 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Procura endpoints GraphQL comuns e testa se a introspecção do schema
- * está habilitada em produção — isso expõe toda a estrutura da API
- * (queries, mutations, tipos internos) para um atacante.
+ * Looks for common GraphQL endpoints and tests whether schema introspection
+ * is enabled in production — this exposes the entire API structure
+ * (queries, mutations, internal types) to an attacker.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class GraphqlIntrospectionCheck implements VulnCheck {
 
     private static final String[] PATHS = {"/graphql", "/api/graphql", "/v1/graphql", "/graphql/console"};
 
-    private static final String QUERY_INTROSPECCAO =
+    private static final String INTROSPECTION_QUERY =
             "{\"query\":\"query{__schema{queryType{name}mutationType{name}types{name kind}}}\"}";
 
     @Override
-    public String nome() {
-        return "Introspecção GraphQL habilitada";
+    public String name() {
+        return "GraphQL introspection enabled";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String path : PATHS) {
@@ -40,36 +40,36 @@ public class GraphqlIntrospectionCheck implements VulnCheck {
                 HttpRequest req = HttpRequest.httpRequestFromUrl(url)
                         .withMethod("POST")
                         .withAddedHeader("Content-Type", "application/json")
-                        .withBody(QUERY_INTROSPECCAO);
+                        .withBody(INTROSPECTION_QUERY);
 
                 HttpResponse resp = api.http().sendRequest(req).response();
                 if (resp == null) continue;
 
                 String body = resp.bodyToString();
                 if (resp.statusCode() == 200 && body != null && body.contains("__schema") && body.contains("queryType")) {
-                    int qtdTipos = contarOcorrencias(body, "\"kind\"");
-                    achados.add(new Finding(
-                            "Introspecção GraphQL habilitada em " + path,
-                            Severity.ALTA,
+                    int typeCount = countOccurrences(body, "\"kind\"");
+                    findings.add(new Finding(
+                            "GraphQL introspection enabled at " + path,
+                            Severity.HIGH,
                             url,
-                            "O endpoint GraphQL responde à query de introspecção, expondo toda a estrutura do schema " +
-                                    "(tipos, queries, mutations) — informação valiosa para mapear a API e encontrar campos sensíveis " +
-                                    "ou mutations não documentadas.",
-                            "Tipos aproximados detectados na resposta: " + qtdTipos + " | Resposta contém '__schema' e 'queryType'.",
-                            "Desabilite a introspecção GraphQL em produção (ou restrinja a usuários autenticados/internos)."));
+                            "The GraphQL endpoint responds to the introspection query, exposing the entire schema structure " +
+                                    "(types, queries, mutations) — valuable information for mapping the API and finding sensitive " +
+                                    "fields or undocumented mutations.",
+                            "Approximate number of types detected in the response: " + typeCount + " | Response contains '__schema' and 'queryType'.",
+                            "Disable GraphQL introspection in production (or restrict it to authenticated/internal users)."));
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de GraphQL (" + path + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in GraphQL check (" + path + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 
-    private int contarOcorrencias(String texto, String trecho) {
+    private int countOccurrences(String text, String snippet) {
         int count = 0, idx = 0;
-        while ((idx = texto.indexOf(trecho, idx)) != -1) {
+        while ((idx = text.indexOf(snippet, idx)) != -1) {
             count++;
-            idx += trecho.length();
+            idx += snippet.length();
         }
         return count;
     }

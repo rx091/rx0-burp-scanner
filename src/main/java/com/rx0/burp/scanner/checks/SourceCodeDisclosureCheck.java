@@ -13,78 +13,78 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Testa variações de backup/editor em cima de nomes de arquivo comuns
- * (index, config, login, database, admin) com extensões que fazem o
- * servidor servir o CÓDIGO-FONTE em vez de executá-lo (.bak, ~, .swp,
- * .orig, .old) — um clássico de servidor mal configurado após deploy
- * ou edição direta no servidor.
+ * Tests backup/editor filename variations on top of common base names
+ * (index, config, login, database, admin) with extensions that make the
+ * server serve the SOURCE CODE instead of executing it (.bak, ~, .swp,
+ * .orig, .old) — a classic sign of a misconfigured server after a deploy
+ * or direct in-place editing on the server.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class SourceCodeDisclosureCheck implements VulnCheck {
 
-    private static final String[] NOMES_BASE = {"index", "config", "login", "database", "db", "admin", "connect", "settings"};
-    private static final String[] EXTENSOES_BASE = {".php", ".asp", ".aspx", ".jsp", ".java"};
-    private static final String[] SUFIXOS_BACKUP = {".bak", "~", ".swp", ".orig", ".old", ".save", ".1"};
+    private static final String[] BASE_NAMES = {"index", "config", "login", "database", "db", "admin", "connect", "settings"};
+    private static final String[] BASE_EXTENSIONS = {".php", ".asp", ".aspx", ".jsp", ".java"};
+    private static final String[] BACKUP_SUFFIXES = {".bak", "~", ".swp", ".orig", ".old", ".save", ".1"};
 
-    private static final Pattern[] ASSINATURAS_CODIGO = {
+    private static final Pattern[] CODE_SIGNATURES = {
             Pattern.compile("<\\?php"),
             Pattern.compile("import\\s+java\\.|package\\s+[\\w.]+;"),
             Pattern.compile("using\\s+System;|namespace\\s+\\w+"),
             Pattern.compile("<%@\\s*page"), // JSP
             Pattern.compile("require\\(|include\\(|function\\s+\\w+\\s*\\("),
-            Pattern.compile("SELECT\\s+.+\\s+FROM\\s+", Pattern.CASE_INSENSITIVE), // SQL embutido em config
+            Pattern.compile("SELECT\\s+.+\\s+FROM\\s+", Pattern.CASE_INSENSITIVE), // SQL embedded in a config file
     };
 
     @Override
-    public String nome() {
-        return "Código-fonte / arquivo de backup exposto";
+    public String name() {
+        return "Exposed source code / backup file";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        return executar(api, baseUrl, FalsePositiveGuard.calcular(api, baseUrl));
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        return execute(api, baseUrl, FalsePositiveGuard.calculate(api, baseUrl));
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
-        for (String nomeBase : NOMES_BASE) {
-            for (String extensao : EXTENSOES_BASE) {
-                for (String sufixo : SUFIXOS_BACKUP) {
+        for (String baseName : BASE_NAMES) {
+            for (String extension : BASE_EXTENSIONS) {
+                for (String suffix : BACKUP_SUFFIXES) {
                     try {
-                        String path = "/" + nomeBase + extensao + sufixo;
+                        String path = "/" + baseName + extension + suffix;
                         String url = base + path;
                         HttpResponse resp = api.http().sendRequest(HttpRequest.httpRequestFromUrl(url)).response();
                         if (resp == null || resp.statusCode() != 200) continue;
 
                         String body = resp.bodyToString();
                         if (body == null || body.isBlank()) continue;
-                        if (guard.pareceFalsoPositivo(resp.statusCode(), body)) continue;
+                        if (guard.looksLikeFalsePositive(resp.statusCode(), body)) continue;
 
-                        for (Pattern p : ASSINATURAS_CODIGO) {
+                        for (Pattern p : CODE_SIGNATURES) {
                             if (p.matcher(body).find()) {
-                                achados.add(new Finding(
-                                        "Código-fonte exposto: " + path,
-                                        Severity.CRITICA,
+                                findings.add(new Finding(
+                                        "Exposed source code: " + path,
+                                        Severity.CRITICAL,
                                         url,
-                                        "Um arquivo de backup/editor foi encontrado publicamente acessível e contém código-fonte " +
-                                                "do lado do servidor (em vez de ser executado, foi servido como texto puro) — isso pode " +
-                                                "expor lógica de negócio, credenciais hardcoded e detalhes de implementação.",
-                                        "Assinatura de código encontrada: " + p.pattern() + " | Tamanho do corpo: " + body.length() + " bytes",
-                                        "Remova arquivos de backup/temporários do diretório público do servidor web, e configure o editor " +
-                                                "(ex: vim) para não deixar arquivos .swp na pasta do projeto em produção."));
+                                        "A backup/editor file was found publicly accessible and contains server-side " +
+                                                "source code (instead of being executed, it was served as plain text) — this can " +
+                                                "expose business logic, hardcoded credentials, and implementation details.",
+                                        "Code signature found: " + p.pattern() + " | Body size: " + body.length() + " bytes",
+                                        "Remove backup/temporary files from the web server's public directory, and configure the editor " +
+                                                "(e.g. vim) to avoid leaving .swp files in the production project folder."));
                                 break;
                             }
                         }
                     } catch (Exception e) {
-                        api.logging().logToError("[Rx0] Erro no check de source code disclosure: " + e.getMessage());
+                        api.logging().logToError("[Rx0] Error in source code disclosure check: " + e.getMessage());
                     }
                 }
             }
         }
-        return achados;
+        return findings;
     }
 }

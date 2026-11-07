@@ -12,17 +12,17 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Envia um caractere de aspa simples em parâmetros comuns e procura por
- * assinaturas de erro de banco de dados na resposta (SQLi error-based).
- * Probe leve, não executa exploração — apenas detecção de erro verboso.
- * Criado por Rx0 - @rodrigocoutinho91
+ * Sends a single-quote character in common parameters and looks for database
+ * error signatures in the response (error-based SQLi). A light probe, does
+ * not perform exploitation — only detects verbose error output.
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class SqlErrorCheck implements VulnCheck {
 
     private static final String[] PARAM_NAMES = {"id", "user", "product", "category", "page", "item"};
     private static final String[] PAYLOADS = {"'", "\"", "1'\"", "') OR ('1'='1"};
 
-    private static final Pattern[] ASSINATURAS_ERRO = {
+    private static final Pattern[] ERROR_SIGNATURES = {
             Pattern.compile("SQL syntax.*MySQL", Pattern.CASE_INSENSITIVE),
             Pattern.compile("Warning.*mysqli?", Pattern.CASE_INSENSITIVE),
             Pattern.compile("PostgreSQL.*ERROR", Pattern.CASE_INSENSITIVE),
@@ -35,13 +35,13 @@ public class SqlErrorCheck implements VulnCheck {
     };
 
     @Override
-    public String nome() {
-        return "Erros de SQL expostos (probe leve)";
+    public String name() {
+        return "Exposed SQL errors (light probe)";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String param : PARAM_NAMES) {
@@ -55,28 +55,28 @@ public class SqlErrorCheck implements VulnCheck {
                     String body = resp.bodyToString();
                     if (body == null) continue;
 
-                    for (Pattern p : ASSINATURAS_ERRO) {
+                    for (Pattern p : ERROR_SIGNATURES) {
                         if (p.matcher(body).find()) {
-                            achados.add(new Finding(
-                                    "Possível SQL Injection (erro exposto) no parâmetro '" + param + "'",
-                                    Severity.CRITICA,
+                            findings.add(new Finding(
+                                    "Possible SQL Injection (exposed error) in parameter '" + param + "'",
+                                    Severity.CRITICAL,
                                     testUrl,
-                                    "O envio de um payload com caractere especial causou um erro de banco de dados visível na resposta, indicando que a entrada não é sanitizada antes da query.",
-                                    "Payload: " + payload + " | Assinatura detectada: " + p.pattern(),
-                                    "Use prepared statements / queries parametrizadas em toda a aplicação e desative mensagens de erro verbosas em produção.",
-                                    "1) Abra o Repeater do Burp e reenvie a URL: " + testUrl + " 2) Confirme o erro de banco na resposta. " +
-                                            "3) Para avançar a exploração, teste UNION-based (ex: ' UNION SELECT NULL,NULL-- -, ajustando o número de colunas) " +
-                                            "ou use o sqlmap apontando pra esse parâmetro: sqlmap -u \"" + testUrl + "\" --batch --dbs " +
-                                            "4) Sempre em ambiente autorizado — isso pode extrair dados do banco."));
-                            // já achou assinatura pra esse param+payload, não precisa testar as outras assinaturas
+                                    "Sending a payload with a special character caused a database error visible in the response, indicating the input is not sanitized before the query.",
+                                    "Payload: " + payload + " | Signature detected: " + p.pattern(),
+                                    "Use prepared statements / parameterized queries throughout the application and disable verbose error messages in production.",
+                                    "1) Open Burp Repeater and resend the URL: " + testUrl + " 2) Confirm the database error in the response. " +
+                                            "3) To advance the exploitation, try UNION-based injection (e.g. ' UNION SELECT NULL,NULL-- -, adjusting the column count) " +
+                                            "or use sqlmap pointed at this parameter: sqlmap -u \"" + testUrl + "\" --batch --dbs " +
+                                            "4) Always in an authorized environment — this can extract data from the database."));
+                            // already found a signature for this param+payload, no need to test the other signatures
                             break;
                         }
                     }
                 } catch (Exception e) {
-                    api.logging().logToError("[Rx0] Erro no check de SQLi (param " + param + "): " + e.getMessage());
+                    api.logging().logToError("[Rx0] Error in SQLi check (param " + param + "): " + e.getMessage());
                 }
             }
         }
-        return achados;
+        return findings;
     }
 }

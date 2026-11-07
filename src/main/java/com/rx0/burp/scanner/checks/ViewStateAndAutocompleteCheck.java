@@ -13,33 +13,33 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Dois checks estáticos relacionados a formulários legados/ASP.NET:
- *  - ASP.NET ViewState presente SEM __VIEWSTATEMAC — permite adulteração do
- *    ViewState (pode levar a deserialização insegura, dependendo da versão).
- *  - Campo <input type="password"> sem autocomplete="off"/"new-password" —
- *    o navegador pode guardar a senha em caches/autofill de forma insegura
- *    em dispositivos compartilhados.
+ * Two static checks related to legacy/ASP.NET forms:
+ *  - ASP.NET ViewState present WITHOUT __VIEWSTATEMAC — allows ViewState
+ *    tampering (can lead to insecure deserialization, depending on the version).
+ *  - A <input type="password"> field with no autocomplete="off"/"new-password" —
+ *    the browser may save the password in cache/autofill insecurely on
+ *    shared devices.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class ViewStateAndAutocompleteCheck implements VulnCheck {
 
     private static final String[] PATHS = {"/", "/login", "/signin", "/account/login"};
 
-    private static final Pattern PADRAO_VIEWSTATE = Pattern.compile("name=[\"']__VIEWSTATE[\"']", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PADRAO_VIEWSTATEMAC = Pattern.compile("name=[\"']__VIEWSTATEMAC[\"']", Pattern.CASE_INSENSITIVE);
+    private static final Pattern VIEWSTATE_PATTERN = Pattern.compile("name=[\"']__VIEWSTATE[\"']", Pattern.CASE_INSENSITIVE);
+    private static final Pattern VIEWSTATEMAC_PATTERN = Pattern.compile("name=[\"']__VIEWSTATEMAC[\"']", Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern PADRAO_CAMPO_SENHA = Pattern.compile("<input\\b[^>]*type=[\"']password[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PADRAO_AUTOCOMPLETE_OFF = Pattern.compile("autocomplete=[\"'](off|new-password)[\"']", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PASSWORD_FIELD_PATTERN = Pattern.compile("<input\\b[^>]*type=[\"']password[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
+    private static final Pattern AUTOCOMPLETE_OFF_PATTERN = Pattern.compile("autocomplete=[\"'](off|new-password)[\"']", Pattern.CASE_INSENSITIVE);
 
     @Override
-    public String nome() {
-        return "ASP.NET ViewState sem MAC / autocomplete em senha";
+    public String name() {
+        return "ASP.NET ViewState with no MAC / password autocomplete";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String path : PATHS) {
@@ -51,46 +51,46 @@ public class ViewStateAndAutocompleteCheck implements VulnCheck {
                 String body = resp.bodyToString();
                 if (body == null) continue;
 
-                // --- ViewState sem MAC ---
-                if (PADRAO_VIEWSTATE.matcher(body).find() && !PADRAO_VIEWSTATEMAC.matcher(body).find()) {
-                    achados.add(new Finding(
-                            "ASP.NET ViewState sem MAC habilitado",
-                            Severity.ALTA,
+                // --- ViewState with no MAC ---
+                if (VIEWSTATE_PATTERN.matcher(body).find() && !VIEWSTATEMAC_PATTERN.matcher(body).find()) {
+                    findings.add(new Finding(
+                            "ASP.NET ViewState with MAC disabled",
+                            Severity.HIGH,
                             url,
-                            "A página usa __VIEWSTATE (ASP.NET Web Forms) mas não possui __VIEWSTATEMAC. Sem o MAC, o ViewState " +
-                                    "pode ser adulterado pelo cliente sem detecção, e dependendo da versão do .NET pode abrir caminho " +
-                                    "para deserialização insegura (ViewState deserialization RCE).",
-                            "__VIEWSTATE encontrado, __VIEWSTATEMAC ausente.",
-                            "Habilite EnableViewStateMac=true (é o padrão em versões recentes do .NET, confirme que não foi desabilitado) " +
-                                    "e mantenha o framework atualizado."));
+                            "The page uses __VIEWSTATE (ASP.NET Web Forms) but has no __VIEWSTATEMAC. Without the MAC, the " +
+                                    "ViewState can be tampered with by the client undetected, and depending on the .NET version " +
+                                    "this can open the door to insecure deserialization (ViewState deserialization RCE).",
+                            "__VIEWSTATE found, __VIEWSTATEMAC absent.",
+                            "Enable EnableViewStateMac=true (this is the default in recent .NET versions — confirm it wasn't disabled) " +
+                                    "and keep the framework up to date."));
                 }
 
-                // --- Autocomplete em campo de senha ---
-                Matcher campoSenhaMatcher = PADRAO_CAMPO_SENHA.matcher(body);
-                int indice = 0;
-                while (campoSenhaMatcher.find()) {
-                    indice++;
-                    String tagCompleta = campoSenhaMatcher.group();
-                    if (!PADRAO_AUTOCOMPLETE_OFF.matcher(tagCompleta).find()) {
-                        achados.add(new Finding(
-                                "Campo de senha sem autocomplete=\"off\"/\"new-password\" (campo #" + indice + ") em " + path,
-                                Severity.BAIXA,
+                // --- Autocomplete on password field ---
+                Matcher passwordFieldMatcher = PASSWORD_FIELD_PATTERN.matcher(body);
+                int index = 0;
+                while (passwordFieldMatcher.find()) {
+                    index++;
+                    String fullTag = passwordFieldMatcher.group();
+                    if (!AUTOCOMPLETE_OFF_PATTERN.matcher(fullTag).find()) {
+                        findings.add(new Finding(
+                                "Password field with no autocomplete=\"off\"/\"new-password\" (field #" + index + ") at " + path,
+                                Severity.LOW,
                                 url,
-                                "O campo de senha não desabilita o autocomplete do navegador. Em dispositivos compartilhados/públicos, " +
-                                        "isso pode permitir que a senha fique salva no autofill do navegador.",
-                                "Tag encontrada: " + resumir(tagCompleta, 120),
-                                "Adicione autocomplete=\"new-password\" (recomendado atualmente pelos navegadores) ao campo de senha."));
+                                "The password field does not disable browser autocomplete. On shared/public devices, " +
+                                        "this can let the password be saved in the browser's autofill.",
+                                "Tag found: " + summarize(fullTag, 120),
+                                "Add autocomplete=\"new-password\" (currently recommended by browsers) to the password field."));
                     }
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de ViewState/autocomplete (" + path + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in ViewState/autocomplete check (" + path + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 
-    private String resumir(String texto, int max) {
-        if (texto.length() <= max) return texto;
-        return texto.substring(0, max) + "...";
+    private String summarize(String text, int max) {
+        if (text.length() <= max) return text;
+        return text.substring(0, max) + "...";
     }
 }

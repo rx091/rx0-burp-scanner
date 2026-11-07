@@ -13,12 +13,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Busca em respostas de endpoints de API comuns por CAMPOS JSON que sugerem
- * exposição excessiva de dados sensíveis (API3:2023 Broken Object Property
- * Level Authorization / Excessive Data Exposure): senha em texto, hash,
- * tokens, segredos, chaves de API, CPF/CNPJ, cartão de crédito.
+ * Scans responses from common API endpoints for JSON FIELDS suggesting
+ * excessive exposure of sensitive data (API3:2023 Broken Object Property
+ * Level Authorization / Excessive Data Exposure): plaintext password, hash,
+ * tokens, secrets, API keys, national ID numbers, credit card.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class ExcessiveDataExposureCheck implements VulnCheck {
 
@@ -27,7 +27,7 @@ public class ExcessiveDataExposureCheck implements VulnCheck {
             "/api/accounts", "/api/customers"
     };
 
-    private static final Pattern[] CAMPOS_SENSIVEIS = {
+    private static final Pattern[] SENSITIVE_FIELDS = {
             Pattern.compile("\"password\"\\s*:\\s*\"[^\"]+\"", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\"senha\"\\s*:\\s*\"[^\"]+\"", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\"password_hash\"\\s*:\\s*\"[^\"]+\"", Pattern.CASE_INSENSITIVE),
@@ -40,13 +40,13 @@ public class ExcessiveDataExposureCheck implements VulnCheck {
     };
 
     @Override
-    public String nome() {
-        return "Exposição excessiva de dados em respostas de API";
+    public String name() {
+        return "Excessive data exposure in API responses";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String path : PATHS) {
@@ -59,29 +59,29 @@ public class ExcessiveDataExposureCheck implements VulnCheck {
                 String body = resp.bodyToString();
                 if (body == null || body.isBlank()) continue;
 
-                for (Pattern p : CAMPOS_SENSIVEIS) {
+                for (Pattern p : SENSITIVE_FIELDS) {
                     Matcher m = p.matcher(body);
                     if (m.find()) {
-                        achados.add(new Finding(
-                                "Possível exposição excessiva de dados em " + path,
-                                Severity.ALTA,
+                        findings.add(new Finding(
+                                "Possible excessive data exposure at " + path,
+                                Severity.HIGH,
                                 url,
-                                "A resposta da API contém um campo que parece ser um dado sensível retornado sem necessidade " +
-                                        "(senha, token, segredo ou documento pessoal). Isso é um padrão clássico de Excessive Data Exposure " +
-                                        "(API3:2023 do OWASP API Security Top 10).",
-                                "Trecho correspondente: " + resumir(m.group(), 120),
-                                "Filtre a resposta da API para retornar apenas os campos que o cliente realmente precisa (use DTOs/serializers explícitos, nunca serialize a entidade inteira)."));
+                                "The API response contains a field that looks like sensitive data returned unnecessarily " +
+                                        "(password, token, secret, or a personal document number). This is a classic Excessive Data Exposure " +
+                                        "pattern (OWASP API Security Top 10 API3:2023).",
+                                "Matching snippet: " + summarize(m.group(), 120),
+                                "Filter the API response to return only the fields the client actually needs (use explicit DTOs/serializers, never serialize the whole entity)."));
                     }
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de exposição de dados (" + path + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in data exposure check (" + path + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 
-    private String resumir(String texto, int max) {
-        if (texto.length() <= max) return texto;
-        return texto.substring(0, max) + "...";
+    private String summarize(String text, int max) {
+        if (text.length() <= max) return text;
+        return text.substring(0, max) + "...";
     }
 }

@@ -14,57 +14,57 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Tenta acessar uma lista de paths comumente sensíveis (arquivos de config,
- * backups, .git, painéis admin, etc) e reporta os que respondem com 200/acesso.
- * Criado por Rx0 - @rodrigocoutinho91
+ * Tries to access a list of commonly sensitive paths (config files, backups,
+ * .git, admin panels, etc) and reports the ones that respond with 200/access.
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class SensitivePathsCheck implements VulnCheck {
 
     private static final Map<String, Severity> PATHS = new LinkedHashMap<>();
     static {
-        PATHS.put("/.git/config", Severity.CRITICA);
-        PATHS.put("/.git/HEAD", Severity.CRITICA);
-        PATHS.put("/.env", Severity.CRITICA);
-        PATHS.put("/.env.bak", Severity.CRITICA);
-        PATHS.put("/wp-config.php.bak", Severity.CRITICA);
-        PATHS.put("/config.php.bak", Severity.ALTA);
-        PATHS.put("/backup.zip", Severity.ALTA);
-        PATHS.put("/backup.sql", Severity.CRITICA);
-        PATHS.put("/dump.sql", Severity.CRITICA);
-        PATHS.put("/.DS_Store", Severity.BAIXA);
-        PATHS.put("/phpinfo.php", Severity.ALTA);
-        PATHS.put("/info.php", Severity.ALTA);
-        PATHS.put("/server-status", Severity.MEDIA);
+        PATHS.put("/.git/config", Severity.CRITICAL);
+        PATHS.put("/.git/HEAD", Severity.CRITICAL);
+        PATHS.put("/.env", Severity.CRITICAL);
+        PATHS.put("/.env.bak", Severity.CRITICAL);
+        PATHS.put("/wp-config.php.bak", Severity.CRITICAL);
+        PATHS.put("/config.php.bak", Severity.HIGH);
+        PATHS.put("/backup.zip", Severity.HIGH);
+        PATHS.put("/backup.sql", Severity.CRITICAL);
+        PATHS.put("/dump.sql", Severity.CRITICAL);
+        PATHS.put("/.DS_Store", Severity.LOW);
+        PATHS.put("/phpinfo.php", Severity.HIGH);
+        PATHS.put("/info.php", Severity.HIGH);
+        PATHS.put("/server-status", Severity.MEDIUM);
         PATHS.put("/.well-known/security.txt", Severity.INFO);
-        PATHS.put("/swagger.json", Severity.MEDIA);
-        PATHS.put("/swagger-ui.html", Severity.MEDIA);
-        PATHS.put("/openapi.json", Severity.MEDIA);
-        PATHS.put("/actuator/env", Severity.CRITICA);
-        PATHS.put("/actuator/health", Severity.BAIXA);
-        PATHS.put("/.htaccess", Severity.MEDIA);
+        PATHS.put("/swagger.json", Severity.MEDIUM);
+        PATHS.put("/swagger-ui.html", Severity.MEDIUM);
+        PATHS.put("/openapi.json", Severity.MEDIUM);
+        PATHS.put("/actuator/env", Severity.CRITICAL);
+        PATHS.put("/actuator/health", Severity.LOW);
+        PATHS.put("/.htaccess", Severity.MEDIUM);
         PATHS.put("/admin/", Severity.INFO);
-        PATHS.put("/phpmyadmin/", Severity.MEDIA);
+        PATHS.put("/phpmyadmin/", Severity.MEDIUM);
         PATHS.put("/robots.txt", Severity.INFO);
         PATHS.put("/sitemap.xml", Severity.INFO);
     }
 
     @Override
-    public String nome() {
-        return "Paths e arquivos sensíveis expostos";
+    public String name() {
+        return "Exposed sensitive paths and files";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        return executar(api, baseUrl, FalsePositiveGuard.calcular(api, baseUrl));
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        return execute(api, baseUrl, FalsePositiveGuard.calculate(api, baseUrl));
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
-        if (guard.isProvavelCatchAll()) {
-            api.logging().logToOutput("[Rx0] SensitivePathsCheck: catch-all/SPA detectado — filtrando falsos-positivos automaticamente.");
+        if (guard.isLikelyCatchAll()) {
+            api.logging().logToOutput("[Rx0] SensitivePathsCheck: catch-all/SPA detected — automatically filtering false positives.");
         }
 
         for (Map.Entry<String, Severity> entry : PATHS.entrySet()) {
@@ -76,35 +76,35 @@ public class SensitivePathsCheck implements VulnCheck {
 
                 int status = resp.statusCode();
                 String body = resp.bodyToString();
-                boolean vazio = body == null || body.isBlank();
+                boolean empty = body == null || body.isBlank();
 
-                // Descarta automaticamente se a resposta bate com o padrão de catch-all do baseline
-                if (guard.pareceFalsoPositivo(status, body)) continue;
+                // Automatically discard if the response matches the baseline's catch-all pattern
+                if (guard.looksLikeFalsePositive(status, body)) continue;
 
-                // Evita falso-positivo clássico de apps SPA que respondem 200 com a mesma home page pra tudo
-                boolean pareceConteudoReal = !vazio && body.length() > 10;
+                // Avoids the classic false positive from SPA apps that respond 200 with the same home page for everything
+                boolean looksLikeRealContent = !empty && body.length() > 10;
 
-                if (status == 200 && pareceConteudoReal) {
-                    achados.add(new Finding(
-                            "Path potencialmente sensível acessível: " + path,
+                if (status == 200 && looksLikeRealContent) {
+                    findings.add(new Finding(
+                            "Potentially sensitive path reachable: " + path,
                             entry.getValue(),
                             base + path,
-                            "A URL respondeu HTTP 200. Confirme manualmente se o conteúdo retornado é realmente o arquivo/painel esperado (pode ser falso-positivo em SPAs com fallback de rota).",
-                            "Status: " + status + " | Tamanho do corpo: " + body.length() + " bytes",
-                            "Se o arquivo/painel não deveria estar público, remova-o ou restrinja o acesso por IP/autenticação."));
+                            "The URL responded HTTP 200. Manually confirm whether the returned content is really the expected file/panel (this can be a false positive on SPAs with a route fallback).",
+                            "Status: " + status + " | Body size: " + body.length() + " bytes",
+                            "If the file/panel should not be public, remove it or restrict access by IP/authentication."));
                 } else if (status == 403) {
-                    achados.add(new Finding(
-                            "Path sensível existe mas está bloqueado (403): " + path,
+                    findings.add(new Finding(
+                            "Sensitive path exists but is blocked (403): " + path,
                             Severity.INFO,
                             base + path,
-                            "O recurso existe no servidor (retornou 403 em vez de 404), o que confirma sua presença mesmo que o acesso esteja negado.",
+                            "The resource exists on the server (it returned 403 instead of 404), which confirms its presence even though access is denied.",
                             "Status: " + status,
-                            "Mantenha o bloqueio e avalie remover o arquivo do diretório público quando possível."));
+                            "Keep the block in place and consider removing the file from the public directory when possible."));
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro ao checar path " + path + ": " + e.getMessage());
+                api.logging().logToError("[Rx0] Error checking path " + path + ": " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 }

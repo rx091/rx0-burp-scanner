@@ -5,33 +5,34 @@ import com.rx0.burp.model.Finding;
 import java.util.List;
 
 /**
- * Gera o relatório em CSV — pra importar direto numa planilha de tracking
- * de findings (Excel/Google Sheets).
+ * Generates the report in CSV — for importing directly into a spreadsheet
+ * (Excel/Google Sheets) to track findings.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class CsvReportGenerator {
 
-    public String gerar(List<Finding> achados) {
+    public String generate(List<Finding> findings) {
         StringBuilder csv = new StringBuilder();
-        csv.append("Severidade;Titulo;URL;Descricao;Evidencia;Modo de Exploracao;Recomendacao;Encontrado em\n");
+        csv.append("Severity;Title;URL;Description;Evidence;Exploitation Steps;Recommendation;Found At\n");
 
-        for (Finding f : achados) {
-            csv.append(campo(f.getSeveridade().name())).append(";");
-            csv.append(campo(f.getTitulo())).append(";");
-            csv.append(campo(f.getUrl())).append(";");
-            csv.append(campo(f.getDescricao())).append(";");
-            csv.append(campo(f.getEvidencia())).append(";");
-            csv.append(campo(f.getModoExploracao())).append(";");
-            csv.append(campo(f.getRecomendacao())).append(";");
-            csv.append(campo(f.getEncontradoEmFormatado())).append("\n");
+        for (Finding f : findings) {
+            csv.append(field(f.getSeverity().name())).append(";");
+            csv.append(field(f.getTitle())).append(";");
+            csv.append(field(f.getUrl())).append(";");
+            csv.append(field(f.getDescription())).append(";");
+            csv.append(field(f.getEvidence())).append(";");
+            csv.append(field(f.getExploitationSteps())).append(";");
+            csv.append(field(f.getRecommendation())).append(";");
+            csv.append(field(f.getFoundAtFormatted())).append("\n");
         }
         return csv.toString();
     }
 
-    // Escapa aspas duplas e envolve o campo em aspas (padrão CSV), já que a descrição/evidência pode conter ';' ou quebras de linha
-    private String campo(String valor) {
-        if (valor == null) return "\"\"";
-        return "\"" + valor.replace("\"", "\"\"").replace("\n", " ").replace("\r", "") + "\"";
+    // Escapes double quotes and wraps the field in quotes (CSV standard), since the
+    // description/evidence may contain ';' or line breaks
+    private String field(String value) {
+        if (value == null) return "\"\"";
+        return "\"" + value.replace("\"", "\"\"").replace("\n", " ").replace("\r", "") + "\"";
     }
 }

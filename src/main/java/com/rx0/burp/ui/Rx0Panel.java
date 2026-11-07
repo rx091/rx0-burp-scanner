@@ -16,30 +16,30 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Aba principal da extensão dentro do Burp: campo de alvo, campo opcional de
- * cookie de sessão (scan autenticado), modo stealth, botão de scan, tabela de
- * achados em tempo real e botões de exportação (HTML/JSON/CSV).
+ * Main tab of the extension inside Burp: target field, optional session cookie
+ * field (authenticated scan), stealth mode, scan button, real-time findings
+ * table, and export buttons (HTML/JSON/CSV).
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class Rx0Panel extends JPanel {
 
     private final MontoyaApi api;
     private final ScanEngine scanEngine = new ScanEngine();
-    private final AtomicReference<List<Finding>> ultimoResultado = new AtomicReference<>();
-    private String ultimoAlvo = "";
+    private final AtomicReference<List<Finding>> lastResult = new AtomicReference<>();
+    private String lastTarget = "";
 
-    private final JTextField campoAlvo = new JTextField();
-    private final JTextField campoCookie = new JTextField();
-    private final JCheckBox checkStealth = new JCheckBox("Modo stealth (mais lento, mais discreto)");
-    private final JButton botaoScan = new JButton("Iniciar scan");
-    private final JButton botaoRelatorioHtml = new JButton("Relatório HTML");
-    private final JButton botaoRelatorioJson = new JButton("Exportar JSON");
-    private final JButton botaoRelatorioCsv = new JButton("Exportar CSV");
-    private final JProgressBar barraProgresso = new JProgressBar();
-    private final JLabel statusLabel = new JLabel("Pronto.");
-    private final DefaultTableModel modeloTabela = new DefaultTableModel(
-            new Object[]{"Severidade", "Achado", "URL"}, 0) {
+    private final JTextField targetField = new JTextField();
+    private final JTextField cookieField = new JTextField();
+    private final JCheckBox stealthCheckbox = new JCheckBox("Stealth mode (slower, more discreet)");
+    private final JButton scanButton = new JButton("Start scan");
+    private final JButton htmlReportButton = new JButton("HTML Report");
+    private final JButton jsonReportButton = new JButton("Export JSON");
+    private final JButton csvReportButton = new JButton("Export CSV");
+    private final JProgressBar progressBar = new JProgressBar();
+    private final JLabel statusLabel = new JLabel("Ready.");
+    private final DefaultTableModel tableModel = new DefaultTableModel(
+            new Object[]{"Severity", "Finding", "URL"}, 0) {
         @Override
         public boolean isCellEditable(int row, int column) {
             return false;
@@ -51,103 +51,103 @@ public class Rx0Panel extends JPanel {
         setLayout(new BorderLayout(10, 10));
         setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
 
-        add(montarTopo(), BorderLayout.NORTH);
-        add(montarCentro(), BorderLayout.CENTER);
-        add(montarRodape(), BorderLayout.SOUTH);
+        add(buildTopPanel(), BorderLayout.NORTH);
+        add(buildCenterPanel(), BorderLayout.CENTER);
+        add(buildBottomPanel(), BorderLayout.SOUTH);
 
-        botaoScan.addActionListener(e -> dispararScan());
-        botaoRelatorioHtml.addActionListener(e -> salvarRelatorio("html"));
-        botaoRelatorioJson.addActionListener(e -> salvarRelatorio("json"));
-        botaoRelatorioCsv.addActionListener(e -> salvarRelatorio("csv"));
-        setBotoesRelatorioHabilitados(false);
+        scanButton.addActionListener(e -> triggerScan());
+        htmlReportButton.addActionListener(e -> saveReport("html"));
+        jsonReportButton.addActionListener(e -> saveReport("json"));
+        csvReportButton.addActionListener(e -> saveReport("csv"));
+        setReportButtonsEnabled(false);
     }
 
-    private JPanel montarTopo() {
-        JPanel topo = new JPanel();
-        topo.setLayout(new BoxLayout(topo, BoxLayout.Y_AXIS));
+    private JPanel buildTopPanel() {
+        JPanel top = new JPanel();
+        top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 
-        JPanel linhaAlvo = new JPanel(new BorderLayout(8, 0));
-        linhaAlvo.add(new JLabel("Host/URL alvo:"), BorderLayout.WEST);
-        campoAlvo.setToolTipText("Ex: https://alvo-autorizado.com");
-        linhaAlvo.add(campoAlvo, BorderLayout.CENTER);
-        linhaAlvo.add(botaoScan, BorderLayout.EAST);
-        linhaAlvo.setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
+        JPanel targetRow = new JPanel(new BorderLayout(8, 0));
+        targetRow.add(new JLabel("Target host/URL:"), BorderLayout.WEST);
+        targetField.setToolTipText("e.g.: https://authorized-target.com");
+        targetRow.add(targetField, BorderLayout.CENTER);
+        targetRow.add(scanButton, BorderLayout.EAST);
+        targetRow.setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
 
-        JPanel linhaCookie = new JPanel(new BorderLayout(8, 0));
-        linhaCookie.add(new JLabel("Cookie de sessão (opcional):"), BorderLayout.WEST);
-        campoCookie.setToolTipText("Ex: sessionid=abc123; outro=valor — deixe vazio pra scan sem autenticação");
-        linhaCookie.add(campoCookie, BorderLayout.CENTER);
-        linhaCookie.setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
+        JPanel cookieRow = new JPanel(new BorderLayout(8, 0));
+        cookieRow.add(new JLabel("Session cookie (optional):"), BorderLayout.WEST);
+        cookieField.setToolTipText("e.g.: sessionid=abc123; other=value — leave empty for an unauthenticated scan");
+        cookieRow.add(cookieField, BorderLayout.CENTER);
+        cookieRow.setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
 
-        JPanel linhaStealth = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        linhaStealth.add(checkStealth);
+        JPanel stealthRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        stealthRow.add(stealthCheckbox);
 
-        topo.add(linhaAlvo);
-        topo.add(linhaCookie);
-        topo.add(linhaStealth);
-        return topo;
+        top.add(targetRow);
+        top.add(cookieRow);
+        top.add(stealthRow);
+        return top;
     }
 
-    private JScrollPane montarCentro() {
-        JTable tabela = new JTable(modeloTabela);
-        tabela.setRowHeight(22);
-        tabela.getColumnModel().getColumn(0).setMaxWidth(90);
-        return new JScrollPane(tabela);
+    private JScrollPane buildCenterPanel() {
+        JTable table = new JTable(tableModel);
+        table.setRowHeight(22);
+        table.getColumnModel().getColumn(0).setMaxWidth(90);
+        return new JScrollPane(table);
     }
 
-    private JPanel montarRodape() {
-        JPanel rodape = new JPanel(new BorderLayout(8, 4));
-        barraProgresso.setStringPainted(true);
+    private JPanel buildBottomPanel() {
+        JPanel bottom = new JPanel(new BorderLayout(8, 4));
+        progressBar.setStringPainted(true);
 
-        JPanel botoesExport = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        botoesExport.add(botaoRelatorioHtml);
-        botoesExport.add(botaoRelatorioJson);
-        botoesExport.add(botaoRelatorioCsv);
+        JPanel exportButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        exportButtons.add(htmlReportButton);
+        exportButtons.add(jsonReportButton);
+        exportButtons.add(csvReportButton);
 
-        JPanel linha1 = new JPanel(new BorderLayout(8, 0));
-        linha1.add(barraProgresso, BorderLayout.CENTER);
-        linha1.add(botoesExport, BorderLayout.EAST);
-        rodape.add(linha1, BorderLayout.NORTH);
-        rodape.add(statusLabel, BorderLayout.SOUTH);
-        return rodape;
+        JPanel row1 = new JPanel(new BorderLayout(8, 0));
+        row1.add(progressBar, BorderLayout.CENTER);
+        row1.add(exportButtons, BorderLayout.EAST);
+        bottom.add(row1, BorderLayout.NORTH);
+        bottom.add(statusLabel, BorderLayout.SOUTH);
+        return bottom;
     }
 
-    private void setBotoesRelatorioHabilitados(boolean habilitado) {
-        botaoRelatorioHtml.setEnabled(habilitado);
-        botaoRelatorioJson.setEnabled(habilitado);
-        botaoRelatorioCsv.setEnabled(habilitado);
+    private void setReportButtonsEnabled(boolean enabled) {
+        htmlReportButton.setEnabled(enabled);
+        jsonReportButton.setEnabled(enabled);
+        csvReportButton.setEnabled(enabled);
     }
 
-    private void dispararScan() {
-        String alvo = campoAlvo.getText().trim();
-        if (alvo.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Informe a URL do host que você está autorizado a testar.", "Rx0 Scanner", JOptionPane.WARNING_MESSAGE);
+    private void triggerScan() {
+        String target = targetField.getText().trim();
+        if (target.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Enter the URL of the host you are authorized to test.", "Rx0 Scanner", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        if (!alvo.startsWith("http://") && !alvo.startsWith("https://")) {
-            alvo = "https://" + alvo;
+        if (!target.startsWith("http://") && !target.startsWith("https://")) {
+            target = "https://" + target;
         }
-        final String alvoFinal = alvo;
-        final String cookieFinal = campoCookie.getText().trim();
-        final boolean stealthFinal = checkStealth.isSelected();
-        ultimoAlvo = alvoFinal;
+        final String targetFinal = target;
+        final String cookieFinal = cookieField.getText().trim();
+        final boolean stealthFinal = stealthCheckbox.isSelected();
+        lastTarget = targetFinal;
 
-        modeloTabela.setRowCount(0);
-        botaoScan.setEnabled(false);
-        setBotoesRelatorioHabilitados(false);
-        barraProgresso.setMaximum(scanEngine.totalDeChecks());
-        barraProgresso.setValue(0);
-        statusLabel.setText("Iniciando scan em " + alvoFinal
-                + (cookieFinal.isEmpty() ? "" : " (autenticado)")
-                + (stealthFinal ? " [modo stealth]" : "") + " ...");
+        tableModel.setRowCount(0);
+        scanButton.setEnabled(false);
+        setReportButtonsEnabled(false);
+        progressBar.setMaximum(scanEngine.totalChecks());
+        progressBar.setValue(0);
+        statusLabel.setText("Starting scan on " + targetFinal
+                + (cookieFinal.isEmpty() ? "" : " (authenticated)")
+                + (stealthFinal ? " [stealth mode]" : "") + " ...");
 
         SwingWorker<List<Finding>, Finding> worker = new SwingWorker<>() {
             @Override
             protected List<Finding> doInBackground() {
-                return scanEngine.executarScanCompleto(api, alvoFinal, (nomeCheck, indice) -> {
+                return scanEngine.runFullScan(api, targetFinal, (checkName, index) -> {
                     SwingUtilities.invokeLater(() -> {
-                        barraProgresso.setValue(Math.min(indice, scanEngine.totalDeChecks()));
-                        statusLabel.setText("Executando: " + nomeCheck + " (" + indice + "/" + scanEngine.totalDeChecks() + ")");
+                        progressBar.setValue(Math.min(index, scanEngine.totalChecks()));
+                        statusLabel.setText("Running: " + checkName + " (" + index + "/" + scanEngine.totalChecks() + ")");
                     });
                 }, cookieFinal.isEmpty() ? null : cookieFinal, stealthFinal);
             }
@@ -155,57 +155,57 @@ public class Rx0Panel extends JPanel {
             @Override
             protected void done() {
                 try {
-                    List<Finding> achados = get();
-                    ultimoResultado.set(achados);
-                    for (Finding f : achados) {
-                        modeloTabela.addRow(new Object[]{f.getSeveridade().name(), f.getTitulo(), f.getUrl()});
+                    List<Finding> findings = get();
+                    lastResult.set(findings);
+                    for (Finding f : findings) {
+                        tableModel.addRow(new Object[]{f.getSeverity().name(), f.getTitle(), f.getUrl()});
                     }
-                    statusLabel.setText("Scan finalizado — " + achados.size() + " achado(s) em " + alvoFinal + ".");
-                    setBotoesRelatorioHabilitados(true);
-                    api.logging().logToOutput("[Rx0] Scan concluído em " + alvoFinal + " — " + achados.size() + " achados.");
+                    statusLabel.setText("Scan finished — " + findings.size() + " finding(s) on " + targetFinal + ".");
+                    setReportButtonsEnabled(true);
+                    api.logging().logToOutput("[Rx0] Scan completed on " + targetFinal + " — " + findings.size() + " findings.");
                 } catch (Exception ex) {
-                    statusLabel.setText("Erro durante o scan: " + ex.getMessage());
-                    api.logging().logToError("[Rx0] Erro no scan: " + ex.getMessage());
+                    statusLabel.setText("Error during scan: " + ex.getMessage());
+                    api.logging().logToError("[Rx0] Scan error: " + ex.getMessage());
                 } finally {
-                    botaoScan.setEnabled(true);
+                    scanButton.setEnabled(true);
                 }
             }
         };
         worker.execute();
     }
 
-    private void salvarRelatorio(String formato) {
-        List<Finding> achados = ultimoResultado.get();
-        if (achados == null) {
-            JOptionPane.showMessageDialog(this, "Rode um scan antes de gerar o relatório.", "Rx0 Scanner", JOptionPane.WARNING_MESSAGE);
+    private void saveReport(String format) {
+        List<Finding> findings = lastResult.get();
+        if (findings == null) {
+            JOptionPane.showMessageDialog(this, "Run a scan before generating the report.", "Rx0 Scanner", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
-        String extensao = formato.equals("json") ? ".json" : formato.equals("csv") ? ".csv" : ".html";
+        String extension = format.equals("json") ? ".json" : format.equals("csv") ? ".csv" : ".html";
         JFileChooser chooser = new JFileChooser();
-        chooser.setSelectedFile(new File("relatorio-rx0-" + System.currentTimeMillis() + extensao));
-        int escolha = chooser.showSaveDialog(this);
-        if (escolha != JFileChooser.APPROVE_OPTION) return;
+        chooser.setSelectedFile(new File("rx0-report-" + System.currentTimeMillis() + extension));
+        int choice = chooser.showSaveDialog(this);
+        if (choice != JFileChooser.APPROVE_OPTION) return;
 
-        File destino = chooser.getSelectedFile();
-        try (FileWriter writer = new FileWriter(destino)) {
-            String conteudo;
-            switch (formato) {
+        File destinationFile = chooser.getSelectedFile();
+        try (FileWriter writer = new FileWriter(destinationFile)) {
+            String content;
+            switch (format) {
                 case "json":
-                    conteudo = new JsonReportGenerator().gerar(ultimoAlvo, achados);
+                    content = new JsonReportGenerator().generate(lastTarget, findings);
                     break;
                 case "csv":
-                    conteudo = new CsvReportGenerator().gerar(achados);
+                    content = new CsvReportGenerator().generate(findings);
                     break;
                 default:
-                    conteudo = new HtmlReportGenerator().gerar(ultimoAlvo, achados);
+                    content = new HtmlReportGenerator().generate(lastTarget, findings);
             }
-            writer.write(conteudo);
-            statusLabel.setText("Relatório (" + formato.toUpperCase() + ") salvo em: " + destino.getAbsolutePath());
-            api.logging().logToOutput("[Rx0] Relatório (" + formato + ") salvo em " + destino.getAbsolutePath());
+            writer.write(content);
+            statusLabel.setText("Report (" + format.toUpperCase() + ") saved to: " + destinationFile.getAbsolutePath());
+            api.logging().logToOutput("[Rx0] Report (" + format + ") saved to " + destinationFile.getAbsolutePath());
         } catch (Exception e) {
-            statusLabel.setText("Erro ao salvar relatório: " + e.getMessage());
-            api.logging().logToError("[Rx0] Erro ao salvar relatório: " + e.getMessage());
+            statusLabel.setText("Error saving report: " + e.getMessage());
+            api.logging().logToError("[Rx0] Error saving report: " + e.getMessage());
         }
     }
 }

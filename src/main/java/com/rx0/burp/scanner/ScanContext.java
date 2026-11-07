@@ -1,25 +1,26 @@
 package com.rx0.burp.scanner;
 
 /**
- * Agrupa os recursos compartilhados entre todos os checks de um mesmo scan:
- * o guard de falso-positivo (detecção de catch-all/SPA) e o cliente interactsh
- * (confirmação out-of-band). Calculado/iniciado UMA VEZ por scan no ScanEngine
- * e passado pra cada check — qualquer check pode ignorar o que não usa.
+ * Groups the resources shared by every check within the same scan:
+ * the false-positive guard (catch-all/SPA detection) and the interactsh
+ * client (out-of-band confirmation). Calculated/started ONCE per scan in
+ * ScanEngine and passed to every check — any check can ignore what it
+ * doesn't use.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class ScanContext {
 
     private final FalsePositiveGuard guard;
     private final InteractshClient interactsh;
-    private final CrawlerLeve crawler;
-    private final String cookieAutenticacao; // pode ser null/vazio — scan sem sessão
+    private final LightCrawler crawler;
+    private final String authCookie; // may be null/empty — unauthenticated scan
 
-    public ScanContext(FalsePositiveGuard guard, InteractshClient interactsh, CrawlerLeve crawler, String cookieAutenticacao) {
+    public ScanContext(FalsePositiveGuard guard, InteractshClient interactsh, LightCrawler crawler, String authCookie) {
         this.guard = guard;
         this.interactsh = interactsh;
         this.crawler = crawler;
-        this.cookieAutenticacao = cookieAutenticacao;
+        this.authCookie = authCookie;
     }
 
     public FalsePositiveGuard guard() {
@@ -30,23 +31,23 @@ public class ScanContext {
         return interactsh;
     }
 
-    public CrawlerLeve crawler() {
+    public LightCrawler crawler() {
         return crawler;
     }
 
-    /** @return o valor do header Cookie a aplicar nas requisições, ou null se não configurado. */
-    public String cookieAutenticacao() {
-        return (cookieAutenticacao == null || cookieAutenticacao.isBlank()) ? null : cookieAutenticacao;
+    /** @return the Cookie header value to apply on requests, or null if not configured. */
+    public String authCookie() {
+        return (authCookie == null || authCookie.isBlank()) ? null : authCookie;
     }
 
-    public boolean temAutenticacao() {
-        return cookieAutenticacao() != null;
+    public boolean hasAuth() {
+        return authCookie() != null;
     }
 
-    /** Aplica o cookie de autenticação (se configurado) numa requisição. Uso: req = ctx.comAuth(req). */
-    public burp.api.montoya.http.message.requests.HttpRequest comAuth(burp.api.montoya.http.message.requests.HttpRequest req) {
-        if (temAutenticacao()) {
-            return req.withAddedHeader("Cookie", cookieAutenticacao());
+    /** Applies the auth cookie (if configured) to a request. Usage: req = ctx.withAuth(req). */
+    public burp.api.montoya.http.message.requests.HttpRequest withAuth(burp.api.montoya.http.message.requests.HttpRequest req) {
+        if (hasAuth()) {
+            return req.withAddedHeader("Cookie", authCookie());
         }
         return req;
     }

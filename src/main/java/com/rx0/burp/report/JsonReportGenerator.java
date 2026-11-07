@@ -7,34 +7,34 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
- * Gera o relatório em JSON — útil para integrar com outras ferramentas
- * (importar numa planilha, alimentar um pipeline de CI, etc).
+ * Generates the report in JSON — useful for integrating with other tools
+ * (importing into a spreadsheet, feeding a CI pipeline, etc).
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class JsonReportGenerator {
 
-    public String gerar(String alvo, List<Finding> achados) {
+    public String generate(String target, List<Finding> findings) {
         StringBuilder json = new StringBuilder();
         json.append("{\n");
-        json.append("  \"criado_por\": \"Rx0 - @rodrigocoutinho91\",\n");
-        json.append("  \"alvo\": \"").append(escapar(alvo)).append("\",\n");
-        json.append("  \"gerado_em\": \"").append(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)).append("\",\n");
-        json.append("  \"total_achados\": ").append(achados.size()).append(",\n");
-        json.append("  \"achados\": [\n");
+        json.append("  \"created_by\": \"Rx0 - @rodrigocoutinho91\",\n");
+        json.append("  \"target\": \"").append(escape(target)).append("\",\n");
+        json.append("  \"generated_at\": \"").append(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)).append("\",\n");
+        json.append("  \"total_findings\": ").append(findings.size()).append(",\n");
+        json.append("  \"findings\": [\n");
 
-        for (int i = 0; i < achados.size(); i++) {
-            Finding f = achados.get(i);
+        for (int i = 0; i < findings.size(); i++) {
+            Finding f = findings.get(i);
             json.append("    {\n");
-            json.append("      \"titulo\": \"").append(escapar(f.getTitulo())).append("\",\n");
-            json.append("      \"severidade\": \"").append(f.getSeveridade().name()).append("\",\n");
-            json.append("      \"url\": \"").append(escapar(f.getUrl())).append("\",\n");
-            json.append("      \"descricao\": \"").append(escapar(f.getDescricao())).append("\",\n");
-            json.append("      \"evidencia\": \"").append(escapar(f.getEvidencia())).append("\",\n");
-            json.append("      \"modo_exploracao\": \"").append(escapar(f.getModoExploracao())).append("\",\n");
-            json.append("      \"recomendacao\": \"").append(escapar(f.getRecomendacao())).append("\",\n");
-            json.append("      \"encontrado_em\": \"").append(f.getEncontradoEmFormatado()).append("\"\n");
-            json.append("    }").append(i < achados.size() - 1 ? "," : "").append("\n");
+            json.append("      \"title\": \"").append(escape(f.getTitle())).append("\",\n");
+            json.append("      \"severity\": \"").append(f.getSeverity().name()).append("\",\n");
+            json.append("      \"url\": \"").append(escape(f.getUrl())).append("\",\n");
+            json.append("      \"description\": \"").append(escape(f.getDescription())).append("\",\n");
+            json.append("      \"evidence\": \"").append(escape(f.getEvidence())).append("\",\n");
+            json.append("      \"exploitation_steps\": \"").append(escape(f.getExploitationSteps())).append("\",\n");
+            json.append("      \"recommendation\": \"").append(escape(f.getRecommendation())).append("\",\n");
+            json.append("      \"found_at\": \"").append(f.getFoundAtFormatted()).append("\"\n");
+            json.append("    }").append(i < findings.size() - 1 ? "," : "").append("\n");
         }
 
         json.append("  ]\n");
@@ -42,7 +42,7 @@ public class JsonReportGenerator {
         return json.toString();
     }
 
-    private String escapar(String s) {
+    private String escape(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\")
                 .replace("\"", "\\\"")

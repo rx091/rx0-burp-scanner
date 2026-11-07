@@ -13,34 +13,34 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Análise ESTÁTICA: busca formulários <form method="post"> na página
- * inicial (e em paths comuns de login/cadastro) e verifica se existe algum
- * campo hidden com nome que sugira token anti-CSRF (csrf, token, authenticity,
- * nonce...). Formulários POST sem nenhum campo desse tipo são um indício de
- * ausência de proteção CSRF — requer confirmação manual (alguns frameworks
- * usam cookie SameSite ou header customizado em vez de campo hidden).
+ * STATIC analysis: looks for <form method="post"> elements on the home page
+ * (and common login/signup paths) and checks whether there is any hidden
+ * field whose name suggests an anti-CSRF token (csrf, token, authenticity,
+ * nonce...). POST forms with no such field are a sign of missing CSRF
+ * protection — requires manual confirmation (some frameworks use SameSite
+ * cookies or a custom header instead of a hidden field).
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class CsrfTokenCheck implements VulnCheck {
 
     private static final String[] PATHS = {"/", "/login", "/signup", "/register", "/contact", "/comment"};
 
-    private static final Pattern PADRAO_FORM_POST = Pattern.compile(
+    private static final Pattern POST_FORM_PATTERN = Pattern.compile(
             "<form\\b[^>]*method=[\"']?post[\"']?[^>]*>(.*?)</form>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
-    private static final Pattern PADRAO_CAMPO_TOKEN = Pattern.compile(
+    private static final Pattern TOKEN_FIELD_PATTERN = Pattern.compile(
             "<input[^>]*name=[\"']?(csrf|_csrf|csrf_token|authenticity_token|_token|nonce|xsrf|anti[-_]?forgery)[^\"'>]*[\"']?",
             Pattern.CASE_INSENSITIVE);
 
     @Override
-    public String nome() {
-        return "CSRF — formulários sem token anti-CSRF";
+    public String name() {
+        return "CSRF — forms with no anti-CSRF token";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String path : PATHS) {
@@ -52,36 +52,36 @@ public class CsrfTokenCheck implements VulnCheck {
                 String body = resp.bodyToString();
                 if (body == null) continue;
 
-                Matcher formMatcher = PADRAO_FORM_POST.matcher(body);
-                int indiceForm = 0;
+                Matcher formMatcher = POST_FORM_PATTERN.matcher(body);
+                int formIndex = 0;
                 while (formMatcher.find()) {
-                    indiceForm++;
-                    String conteudoForm = formMatcher.group(1);
-                    boolean temToken = PADRAO_CAMPO_TOKEN.matcher(conteudoForm).find();
+                    formIndex++;
+                    String formContent = formMatcher.group(1);
+                    boolean hasToken = TOKEN_FIELD_PATTERN.matcher(formContent).find();
 
-                    if (!temToken) {
-                        achados.add(new Finding(
-                                "Formulário POST sem token anti-CSRF aparente (form #" + indiceForm + ") em " + path,
-                                Severity.MEDIA,
+                    if (!hasToken) {
+                        findings.add(new Finding(
+                                "POST form with no apparent anti-CSRF token (form #" + formIndex + ") at " + path,
+                                Severity.MEDIUM,
                                 url,
-                                "Um formulário com method=\"post\" foi encontrado sem nenhum campo hidden com nome típico de " +
-                                        "token anti-CSRF (csrf, _token, authenticity_token...). Isso PODE ser uma falha de CSRF — mas " +
-                                        "também pode ser proteção via cookie SameSite, header customizado (ex: X-CSRF-Token via JS) " +
-                                        "ou Double Submit Cookie, que não aparecem na análise estática do HTML. Requer confirmação manual.",
-                                "Trecho do formulário (resumido): " + resumir(conteudoForm.trim(), 150),
-                                "Implemente proteção CSRF (token sincronizador, SameSite=Strict/Lax nos cookies de sessão, " +
-                                        "ou verificação de header customizado) em toda ação que altera estado (POST/PUT/DELETE)."));
+                                "A form with method=\"post\" was found with no hidden field named like a typical " +
+                                        "anti-CSRF token (csrf, _token, authenticity_token...). This MAY be a CSRF flaw — but " +
+                                        "it could also be protected via a SameSite cookie, a custom header (e.g. X-CSRF-Token via JS) " +
+                                        "or the Double Submit Cookie pattern, none of which show up in static HTML analysis. Requires manual confirmation.",
+                                "Form snippet (truncated): " + summarize(formContent.trim(), 150),
+                                "Implement CSRF protection (a synchronizer token, SameSite=Strict/Lax on session cookies, " +
+                                        "or a custom header check) on every state-changing action (POST/PUT/DELETE)."));
                     }
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de CSRF (" + path + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in CSRF check (" + path + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 
-    private String resumir(String texto, int max) {
-        if (texto.length() <= max) return texto;
-        return texto.substring(0, max) + "...";
+    private String summarize(String text, int max) {
+        if (text.length() <= max) return text;
+        return text.substring(0, max) + "...";
     }
 }

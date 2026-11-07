@@ -1,330 +1,332 @@
-# Rx0 Vulnerability Scanner - Extensão para Burp Suite
+# Rx0 Vulnerability Scanner - Burp Suite Extension
 
-Extensão em **Java** (Montoya API) para Burp Suite **Community/Pro** que roda uma bateria de
-checks de segurança contra um host autorizado e gera um **relatório HTML com tema escuro**,
-assinado como *Criado por Rx0 - @rodrigocoutinho91*.
+A **Java** extension (Montoya API) for Burp Suite **Community/Pro** that runs a battery of
+security checks against an authorized host and generates a **dark-themed HTML report**,
+signed as *Created by Rx0 - @rodrigocoutinho91*.
 
-> ⚠️ **Uso autorizado apenas.** Essa extensão faz requisições ativas (incluindo probes de
-> XSS/SQLi/Open Redirect) contra o host informado. Use exclusivamente em ativos que você tem
-> permissão explícita para testar.
+> ⚠️ **Authorized use only.** This extension makes active requests (including XSS/SQLi/Open
+> Redirect probes) against the host you provide. Use it exclusively against assets you have
+> explicit permission to test.
 
-## O que ela cobre (v1.0.0)
+## What it covers (v1.0.0)
 
-- **Headers de segurança ausentes**: CSP, X-Frame-Options, HSTS, X-Content-Type-Options,
-  Referrer-Policy, Permissions-Policy + divulgação de banner via `Server`/`X-Powered-By`.
-- **Cookies**: flags `Secure`, `HttpOnly` e `SameSite` ausentes.
-- **CORS mal configurado**: reflexão de `Origin` arbitrário, principalmente com
+- **Missing security headers**: CSP, X-Frame-Options, HSTS, X-Content-Type-Options,
+  Referrer-Policy, Permissions-Policy + banner disclosure via `Server`/`X-Powered-By`.
+- **Cookies**: missing `Secure`, `HttpOnly` and `SameSite` flags.
+- **Misconfigured CORS**: reflection of an arbitrary `Origin`, especially combined with
   `Access-Control-Allow-Credentials: true`.
-- **Paths/arquivos sensíveis expostos**: `.git/`, `.env`, backups, `phpinfo.php`,
-  `swagger.json`, `/actuator/env`, painéis comuns, etc.
-- **XSS refletido**: probe não-intrusivo em parâmetros de query comuns.
-- **SQL Injection (error-based)**: payloads simples de aspas em parâmetros comuns,
-  procurando assinaturas de erro de MySQL/PostgreSQL/MSSQL/Oracle/SQLite/PDO.
-- **Open Redirect**: testa parâmetros típicos de redirecionamento com domínio externo forjado.
+- **Exposed sensitive paths/files**: `.git/`, `.env`, backups, `phpinfo.php`,
+  `swagger.json`, `/actuator/env`, common panels, etc.
+- **Reflected XSS**: a non-intrusive probe on common query parameters.
+- **SQL Injection (error-based)**: simple quote-character payloads on common parameters,
+  looking for MySQL/PostgreSQL/MSSQL/Oracle/SQLite/PDO error signatures.
+- **Open Redirect**: tests typical redirect parameters with a forged external domain.
 
-### Checks focados em API (OWASP API Security Top 10)
+### API-focused checks (OWASP API Security Top 10)
 
-- **Descoberta de endpoints sem autenticação** (API1/API2): testa paths comuns de API
-  (`/api/users`, `/api/admin`, `/api/me`, etc.) sem enviar nenhuma credencial e sinaliza
-  quando retornam dados reais com HTTP 200.
-- **IDOR / BOLA sequencial** (API1): acessa `/api/users/1`, `/2`, `/3` (e variações) sem
-  autenticação e flaga quando objetos **diferentes** vêm de volta - indício de ausência de
-  checagem de ownership.
-- **Exposição excessiva de dados** (API3): varre respostas de endpoints de API procurando
-  campos como `password`, `secret`, `access_token`, `cpf`, `cnpj`, número de cartão, etc.
-  retornados sem necessidade.
-- **Introspecção GraphQL habilitada**: testa `/graphql`, `/api/graphql` e variações com uma
-  query de introspecção - se habilitada em produção, expõe todo o schema da API.
-- **JWTs fracos no histórico do proxy**: vasculha o histórico do Proxy do Burp em busca de
-  tokens `Authorization: Bearer` enviados ao host alvo, decodifica header/payload e aponta
-  `alg: none` (token não assinado) e ausência da claim `exp` (token que nunca expira).
-  *Navegue logado pela aplicação antes de rodar o scan para ter tokens no histórico.*
-- **Métodos HTTP perigosos**: detecta `TRACE` habilitado (Cross-Site Tracing) e métodos de
-  escrita (`PUT`/`DELETE`/`PATCH`) anunciados via `OPTIONS`.
-- **Rate limiting ausente** (API4): dispara uma rajada de tentativas de login e verifica se o
-  servidor aplica HTTP 429/403 em algum momento.
-- **Erros verbosos / stack trace em API**: envia um JSON malformado e procura por stack
-  traces (Java/Python/PHP/.NET/Node) ou caminhos de arquivo do servidor na resposta de erro.
+- **Unauthenticated endpoint discovery** (API1/API2): tests common API paths
+  (`/api/users`, `/api/admin`, `/api/me`, etc.) with no credentials sent, and flags
+  cases that return real data with HTTP 200.
+- **Sequential IDOR / BOLA** (API1): accesses `/api/users/1`, `/2`, `/3` (and variations) with
+  no authentication and flags it when **different** objects come back - a sign of
+  missing ownership checks.
+- **Excessive data exposure** (API3): scans API responses for fields like
+  `password`, `secret`, `access_token`, national ID numbers, card numbers, etc.
+  returned unnecessarily.
+- **GraphQL introspection enabled**: tests `/graphql`, `/api/graphql` and variations with an
+  introspection query - if enabled in production, this exposes the entire API schema.
+- **Weak JWTs in the proxy history**: scans the Burp Proxy history for
+  `Authorization: Bearer` tokens sent to the target host, decodes the header/payload and flags
+  `alg: none` (unsigned token) and a missing `exp` claim (a token that never expires).
+  *Browse the application while logged in before running the scan to populate the history with tokens.*
+- **Dangerous HTTP methods**: detects `TRACE` enabled (Cross-Site Tracing) and write
+  methods (`PUT`/`DELETE`/`PATCH`) advertised via `OPTIONS`.
+- **Missing rate limiting** (API4): fires a burst of login attempts and checks whether the
+  server applies HTTP 429/403 at any point.
+- **Verbose errors / stack trace in APIs**: sends malformed JSON and looks for stack
+  traces (Java/Python/PHP/.NET/Node) or server file paths in the error response.
 
-### Injeção / inclusão de arquivo / SSRF
+### Injection / file inclusion / SSRF
 
-- **SSRF**: testa parâmetros que aceitam URL (webhook, callback, avatar, fetch...) contra
-  alvos internos clássicos - incluindo o endpoint de metadata da AWS/GCP - e confirma pela
-  assinatura de conteúdo que o SERVIDOR fez a requisição.
-- **Path Traversal / LFI**: injeta payloads de travessia de diretório (`../../etc/passwd`,
-  variações com encoding e barra dupla, `win.ini`) em parâmetros que servem arquivo/página.
-- **RFI (Remote File Inclusion)**: injeta uma URL externa falsa em parâmetros de
-  include/template e procura por mensagens de erro que confirmem que o servidor tentou
-  buscar/incluir aquela URL remota (detecção baseada em erro, sem precisar hospedar payload).
-- **NoSQL Injection**: compara um login com credenciais inválidas normais (baseline) contra o
-  mesmo endpoint usando operadores `$ne` - se o comportamento virar "autenticado", é bypass.
-- **Mass Assignment**: envia campos extras e privilegiados (`isAdmin`, `role`, `balance`,
-  `verified`...) em cadastro/atualização de perfil e verifica se a resposta ecoa esses
-  valores, sinal de que o backend faz bind direto do JSON na entidade sem allowlist.
+- **SSRF**: tests parameters that accept a URL (webhook, callback, avatar, fetch...) against
+  classic internal targets - including the AWS/GCP metadata endpoint - and confirms via the
+  response's content signature that the SERVER made the request.
+- **Path Traversal / LFI**: injects directory traversal payloads (`../../etc/passwd`,
+  encoded and double-slash variations, `win.ini`) into parameters that serve a file/page.
+- **RFI (Remote File Inclusion)**: injects a fake external URL into include/template
+  parameters and looks for error messages confirming the server tried to
+  fetch/include that remote URL (error-based detection, no need to host a payload).
+- **NoSQL Injection**: compares a login with normal invalid credentials (baseline) against the
+  same endpoint using `$ne` operators - if the behavior flips to "authenticated", it's a bypass.
+- **Mass Assignment**: sends extra privileged fields (`isAdmin`, `role`, `balance`,
+  `verified`...) on registration/profile-update endpoints and checks whether the response
+  echoes those values back, a sign the backend directly binds the JSON to the entity with no allowlist.
 
-### XSS (3 checks dedicados)
+### XSS (3 dedicated checks)
 
-- **`ReflectedXssCheck`**: testa GET (query string) e POST (corpo JSON e form-urlencoded)
-  com 6 payloads em contextos diferentes (tag crua, quebra de atributo, quebra de `<script>`,
-  `onerror`/`onload`).
-- **`StoredXssCheck`**: envia o payload via POST para endpoints típicos de comentário/feedback
-  e confirma em uma **segunda requisição separada** (GET) se ele volta sem escaping - ou seja,
-  se ficou persistido e atinge qualquer visitante, não só quem enviou.
-- **`DomXssCheck`**: análise ESTÁTICA do HTML/JS da página - procura por uma fonte controlável
-  (`location.hash`, `location.search`, `document.URL`...) próxima de um sink perigoso
-  (`innerHTML`, `eval`, `document.write`...) no mesmo trecho de código. Não executa o JS de
-  verdade, então é só um sinal pra você confirmar manualmente no DevTools.
+- **`ReflectedXssCheck`**: tests GET (query string) and POST (JSON and
+  form-urlencoded body) with 6 payloads across different contexts (raw tag, attribute
+  breakout, `<script>` breakout, `onerror`/`onload`).
+- **`StoredXssCheck`**: sends the payload via POST to typical comment/feedback
+  endpoints and confirms in a **separate second request** (GET) whether it comes back
+  without escaping - i.e. whether it got persisted and reaches any visitor, not just the sender.
+- **`DomXssCheck`**: a STATIC analysis of the page's HTML/JS - looks for a controllable source
+  (`location.hash`, `location.search`, `document.URL`...) near a dangerous sink
+  (`innerHTML`, `eval`, `document.write`...) in the same chunk of code. Doesn't actually
+  execute the JS, so it's just a signal for you to confirm manually in DevTools.
 
-### Mais falhas (baseadas na lista de checks do Burp Scanner)
+### More checks (based on the Burp Scanner's check list)
 
-- **SSTI** (`SstiCheck`): injeta expressões matemáticas em 6 sintaxes de template engine
-  (Jinja2/Twig, Freemarker/EL, Thymeleaf/ERB, ERB/EJS, Razor) e confirma se o RESULTADO
-  avaliado aparece na resposta  com baseline anti-falso-positivo.
-- **OS Command Injection** (`OsCommandInjectionCheck`): blind, baseado em tempo - injeta
-  comandos de delay (Unix e Windows) e só confirma o achado se o atraso bater em **duas**
-  tentativas separadas.
-- **XXE** (`XxeCheck`): envia XML com entidade externa apontando pra `/etc/passwd` em
-  endpoints que aceitam XML.
-- **LDAP Injection / XPath Injection** (`LdapXpathInjectionCheck`): error-based, igual ao
-  SQLi, mas pra esses dois motores de consulta.
-- **Directory Listing** (`DirectoryListingCheck`): detecta listagem de diretório habilitada
-  em pastas comuns (`/uploads/`, `/backup/`, `/assets/`...).
-- **Código-fonte exposto** (`SourceCodeDisclosureCheck`): testa variações de backup/editor
-  (`.bak`, `~`, `.swp`, `.orig`) em cima de nomes comuns (`index`, `config`, `login`...) e
-  confirma por assinatura de código real (PHP/Java/.NET/JSP/SQL) no corpo.
-- **Dados sensíveis no corpo** (`SensitiveDataInBodyCheck`): chave privada, JWK privado, IP
-  interno, possível cartão de crédito/CPF, connection string de banco e vazamento em massa
-  de e-mails (5+ distintos).
-- **CSRF** (`CsrfTokenCheck`): análise estática de formulários POST sem campo hidden de token
-  anti-CSRF.
-- **ViewState / Autocomplete** (`ViewStateAndAutocompleteCheck`): ASP.NET `__VIEWSTATE` sem
-  `__VIEWSTATEMAC`, e campos de senha sem `autocomplete="new-password"`.
+- **SSTI** (`SstiCheck`): injects math expressions in 6 template-engine syntaxes
+  (Jinja2/Twig, Freemarker/EL, Thymeleaf/ERB, ERB/EJS, Razor) and confirms whether the
+  evaluated RESULT appears in the response, with an anti-false-positive baseline.
+- **OS Command Injection** (`OsCommandInjectionCheck`): blind, time-based - injects
+  delay commands (Unix and Windows) and only confirms the finding if the delay
+  matches on **two** separate attempts.
+- **XXE** (`XxeCheck`): sends XML with an external entity pointing at `/etc/passwd` to
+  endpoints that accept XML.
+- **LDAP Injection / XPath Injection** (`LdapXpathInjectionCheck`): error-based, same
+  approach as SQLi, but for these two query engines.
+- **Directory Listing** (`DirectoryListingCheck`): detects directory listing enabled
+  in common folders (`/uploads/`, `/backup/`, `/assets/`...).
+- **Exposed source code** (`SourceCodeDisclosureCheck`): tests backup/editor filename
+  variations (`.bak`, `~`, `.swp`, `.orig`) on top of common names (`index`, `config`,
+  `login`...) and confirms via real-code signatures (PHP/Java/.NET/JSP/SQL) in the body.
+- **Sensitive data in the body** (`SensitiveDataInBodyCheck`): a private key, a private
+  JWK, an internal IP, a possible credit card/national ID number, a database connection
+  string, and mass email leakage (5+ distinct addresses).
+- **CSRF** (`CsrfTokenCheck`): static analysis of POST forms with no hidden
+  anti-CSRF token field.
+- **ViewState / Autocomplete** (`ViewStateAndAutocompleteCheck`): ASP.NET `__VIEWSTATE` with no
+  `__VIEWSTATEMAC`, and password fields with no `autocomplete="new-password"`.
 
-### Mais uma leva: fingerprint, host header, upload, cache poisoning, lógica de negócio
+### One more round: fingerprinting, host header, upload, cache poisoning, business logic
 
-- **`TechFingerprintCheck`** (INFO): identifica CMS/framework (WordPress, Laravel, Django,
-  Rails, ASP.NET, React, Angular, Vue...) via assinaturas em HTML/cookies, pra direcionar o
-  resto do teste manual.
-- **`HostHeaderInjectionCheck`**: testa se o servidor confia cegamente no header `Host`/
-  `X-Forwarded-Host` - pode levar a cache poisoning, link de reset de senha envenenado, ou
-  SSRF interno.
-- **`FileUploadCheck`**: envia um arquivo com extensão dupla (`.php.jpg`) disfarçado de
-  imagem pra endpoints de upload comuns, e reporta se foi aceito - primeiro passo clássico
-  pra Unrestricted File Upload / RCE.
-- **`WebCachePoisoningCheck`**: testa headers "unkeyed" (`X-Forwarded-Host`, `X-Forwarded-
-  Scheme`...) que afetam o conteúdo mas não a chave de cache - detecta a CONDIÇÃO de risco
-  (reflexão + cache presente); confirmar o envenenamento de fato fica como passo manual
-  (documentado no "Modo de exploração" do achado).
-- **`BusinessLogicCheck`**: heurísticas básicas de e-commerce - testa quantidade negativa e
-  preço manipulado diretamente no payload de carrinho/checkout.
-- **JWT Algorithm Confusion** (adicionado ao `JwtWeaknessCheck` existente): quando o JWT usa
-  RS256/384/512, busca a chave pública em endpoints JWKS comuns (`/.well-known/jwks.json`) e,
-  se encontrar, **gera um token forjado de verdade** assinado em HS256 usando a chave pública
-  como segredo HMAC - o token pronto vem no campo "Modo de exploração" pra você testar direto
-  no Repeater contra um endpoint protegido.
+- **`TechFingerprintCheck`** (INFO): identifies the CMS/framework (WordPress, Laravel, Django,
+  Rails, ASP.NET, React, Angular, Vue...) via HTML/cookie signatures, to help direct the
+  rest of the manual testing.
+- **`HostHeaderInjectionCheck`**: tests whether the server blindly trusts the `Host`/
+  `X-Forwarded-Host` header - can lead to cache poisoning, a poisoned password-reset
+  link, or internal SSRF.
+- **`FileUploadCheck`**: sends a double-extension (`.php.jpg`) file disguised as an
+  image to common upload endpoints, and reports whether it was accepted - the classic
+  first step toward Unrestricted File Upload / RCE.
+- **`WebCachePoisoningCheck`**: tests "unkeyed" headers (`X-Forwarded-Host`, `X-Forwarded-
+  Scheme`...) that affect content but not the cache key - detects the RISK CONDITION
+  (reflection + presence of a cache); confirming the poisoning itself is left as a manual step
+  (documented in each finding's "Exploitation steps").
+- **`BusinessLogicCheck`**: basic e-commerce heuristics - tests a negative quantity and a
+  manipulated price sent directly in the cart/checkout payload.
+- **JWT Algorithm Confusion** (added to the existing `JwtWeaknessCheck`): when the JWT uses
+  RS256/384/512, looks for the public key on common JWKS endpoints (`/.well-known/jwks.json`) and,
+  if found, **actually generates a forged token** signed with HS256 using the public key
+  as the HMAC secret - the ready-to-use token appears in the "Exploitation steps" field so
+  you can test it directly in Repeater against a protected endpoint.
 
-### Crawling leve (parâmetros reais em vez de só nomes chutados)
+### Light crawling (real parameters instead of just guessed names)
 
-`CrawlerLeve` navega a página inicial UMA VEZ por scan e extrai nomes de parâmetros reais
-(de links `?param=` e campos `<input name="...">` de formulário), disponibilizando isso via
-`ScanContext` pra qualquer check usar - complementa (não substitui) a lista de nomes comuns
-que cada check já testa.
+`LightCrawler` visits the home page ONCE per scan and extracts real parameter
+names (from `?param=` links and `<input name="...">` form fields), making them
+available via `ScanContext` to any check - complementing (not replacing) the list of
+common names each check already tests.
 
-### Scan autenticado e modo stealth
+### Authenticated scan and stealth mode
 
-- **Cookie de sessão**: campo novo na aba, opcional - preenchendo com algo tipo
-  `sessionid=abc123`, esse valor é enviado no header `Cookie` em toda requisição dos checks
-  que usam `ScanContext` (hoje: os 4 checks de confirmação OOB + os 5 novos desta leva). Isso
-  abre a superfície que fica atrás de login.
-- **Modo stealth**: checkbox que reduz o scan pra 1 thread só com um pequeno delay entre
-  checks, em vez da paralelização agressiva padrão - útil contra WAF sensível ou quando o
-  cliente pede um ritmo mais discreto.
+- **Session cookie**: a new, optional field in the tab - filling it with something like
+  `sessionid=abc123`, this value is sent in the `Cookie` header on every request from the
+  checks that use `ScanContext` (currently: the 4 OOB-confirmation checks plus the 5 checks
+  from this latest round). This opens up the surface that sits behind a login.
+- **Stealth mode**: a checkbox that reduces the scan to a single thread with a small delay
+  between checks, instead of the default aggressive parallelization - useful against a
+  sensitive WAF or when the client asks for a more discreet pace.
 
-### Exportação em JSON e CSV
+### JSON and CSV export
 
-Além do relatório HTML, agora dá pra exportar em **JSON** (`JsonReportGenerator` - pra
-integrar com outras ferramentas/pipelines) e **CSV** (`CsvReportGenerator` - pra importar
-direto numa planilha de tracking de findings). Três botões na aba: "Relatório HTML",
-"Exportar JSON", "Exportar CSV".
+In addition to the HTML report, you can now export to **JSON** (`JsonReportGenerator` - for
+integrating with other tools/pipelines) and **CSV** (`CsvReportGenerator` - to import
+directly into a findings-tracking spreadsheet). Three buttons on the tab: "HTML Report",
+"Export JSON", "Export CSV".
 
-### Desempenho e eficácia (paralelização + confirmação OOB via interactsh)
+### Performance and effectiveness (parallelization + OOB confirmation via interactsh)
 
-- **Paralelização**: os 31 checks agora rodam em um pool de **6 threads simultâneas**
-  (em vez de um atrás do outro), reduzindo bastante o tempo total de scan. O número é
-  deliberadamente moderado pra não sobrecarregar o alvo nem disparar WAF/rate-limiting
-  de forma agressiva.
-- **Confirmação out-of-band via interactsh** (`InteractshClient`): alternativa open-source
-  ao Burp Collaborator (que é exclusivo do Pro), implementada do zero em Java puro - RSA-2048
-  + AES-256 pra registrar e descriptografar interações com servidores públicos interactsh
-  (`oast.pro`, `oast.live`, `oast.site`, `oast.online`, `oast.fun`). Os checks **SSRF**, **OS
-  Command Injection**, **XXE** e **RFI** agora, além da detecção por conteúdo/erro/tempo já
-  existente, disparam um payload adicional apontando pra um domínio único gerado na hora. No
-  final do scan a extensão espera alguns segundos e consulta se o alvo realmente "ligou de
-  volta" - se confirmado, gera um achado adicional com `[CONFIRMADO via OOB]` no título,
-  marcado como inequívoco (não depende de reflexão de conteúdo nem de medição de tempo).
-  Isso é **estritamente aditivo**: se o registro com o interactsh falhar (rede bloqueada,
-  servidor fora do ar), a extensão simplesmente não gera esse achado extra - todo o resto
-  continua funcionando exatamente como antes.
-- **Deduplicação automática**: se dois checks diferentes (ou a confirmação OOB) acharem o
-  mesmo problema (mesmo título + mesma URL), o relatório final mostra só uma vez.
-- **Top 5 riscos**: o relatório agora abre com um resumo dos 5 achados de maior severidade,
-  antes do detalhamento completo.
+- **Parallelization**: the 31 checks now run in a pool of **6 concurrent threads**
+  (instead of one after another), significantly cutting total scan time. The number is
+  deliberately moderate so it doesn't overload the target or aggressively trigger a
+  WAF/rate-limiting.
+- **Out-of-band confirmation via interactsh** (`InteractshClient`): an open-source alternative
+  to Burp Collaborator (which is Pro-only), implemented from scratch in plain Java - RSA-2048
+  + AES-256 to register and decrypt interactions with public interactsh servers
+  (`oast.pro`, `oast.live`, `oast.site`, `oast.online`, `oast.fun`). The **SSRF**, **OS
+  Command Injection**, **XXE** and **RFI** checks now, in addition to their existing
+  content/error/time-based detection, also fire an extra payload pointing at a
+  uniquely generated domain. At the end of the scan the extension waits a few seconds and
+  checks whether the target actually "called back" - if confirmed, it generates an
+  additional finding with `[CONFIRMED via OOB]` in the title, marked as unambiguous (it
+  doesn't depend on content reflection or timing measurement). This is **strictly additive**:
+  if registration with interactsh fails (network blocked, server down), the extension simply
+  doesn't generate that extra finding - everything else keeps working exactly as before.
+- **Automatic deduplication**: if two different checks (or the OOB confirmation) find the
+  same issue (same title + same URL), the final report shows it only once.
+- **Top 5 risks**: the report now opens with a summary of the 5 highest-severity
+  findings, before the full breakdown.
 
-### Modo de exploração em cada achado
+### Exploitation steps on every finding
 
-Todo achado do relatório agora tem uma seção **"Modo de exploração"**, com passo a passo de
-como reproduzir/validar manualmente a falha a partir do que o check já coletou (URL, payload,
-parâmetro). Os checks de severidade CRITICA/ALTA mais relevantes para pentest (SQLi, XSS
-refletido/armazenado, SSTI, OS Command Injection, XXE, SSRF, Path Traversal, RFI, NoSQL
-Injection, Mass Assignment, IDOR, CORS, LDAP/XPath Injection, JWT) têm instruções
-**específicas** (ex: como escalar SQLi pra extração de dados, como confirmar XSS armazenado
-atingindo outro usuário, como forjar um JWT sem assinatura). Os demais checks recebem um modo
-de exploração genérico - reenviar a requisição no Repeater e observar a evidência descrita.
+Every finding in the report now has an **"Exploitation steps"** section, with a
+step-by-step guide on how to manually reproduce/validate the flaw from what the check
+already collected (URL, payload, parameter). The CRITICAL/HIGH severity checks most
+relevant to pentesting (SQLi, reflected/stored XSS, SSTI, OS Command Injection, XXE, SSRF,
+Path Traversal, RFI, NoSQL Injection, Mass Assignment, IDOR, CORS, LDAP/XPath Injection,
+JWT) get **specific** instructions (e.g. how to escalate SQLi to data extraction, how to
+confirm stored XSS reaching another user, how to forge an unsigned JWT). The remaining
+checks get a generic exploitation note - resend the request in Repeater and observe the
+described evidence.
 
-> ⚠️ Esse conteúdo é para validação em ambiente **autorizado**, como parte do processo normal
-> de confirmação de um achado de pentest - nunca para uso fora do escopo de autorização.
+> ⚠️ This content is for validation in an **authorized** environment, as part of the normal
+> finding-confirmation process of a pentest - never for use outside the scope of authorization.
 
-### Redução automática de falso-positivo
+### Automatic false-positive reduction
 
-A extensão calcula, **uma vez por scan**, um baseline pedindo um path aleatório que
-certamente não existe (`FalsePositiveGuard`). Se o servidor responder HTTP 200 pra esse path
-(comportamento típico de SPA com rota catch-all, ex: React Router servindo `index.html` pra
-qualquer URL), os checks de path/endpoint (`SensitivePathsCheck`, `ApiEndpointDiscoveryCheck`,
-`DirectoryListingCheck`, `SourceCodeDisclosureCheck`) comparam cada resposta contra essa
-assinatura e **descartam automaticamente** achados que batem com o padrão de catch-all -
-antes esses apps gerariam dezenas de "achados" falsos só porque toda URL retorna 200 com a
-mesma página. Outros checks (SSTI, OS Command Injection) usam suas próprias técnicas de
-confirmação: baseline de conteúdo (SSTI) e dupla confirmação por tempo (OS Command Injection).
+The extension calculates, **once per scan**, a baseline by requesting a random path that
+certainly doesn't exist (`FalsePositiveGuard`). If the server responds HTTP 200 for that path
+(typical behavior of an SPA with a catch-all route, e.g. React Router serving `index.html` for
+any URL), the path/endpoint checks (`SensitivePathsCheck`, `ApiEndpointDiscoveryCheck`,
+`DirectoryListingCheck`, `SourceCodeDisclosureCheck`) compare each response against that
+signature and **automatically discard** findings that match the catch-all pattern -
+previously those apps would generate dozens of false "findings" just because every URL
+returns 200 with the same page. Other checks (SSTI, OS Command Injection) use their own
+confirmation techniques: a content baseline (SSTI) and double time-based confirmation (OS
+Command Injection).
 
-> Isso **não substitui** o Active Scanner do Burp Pro nem uma avaliação manual completa - é um
-> conjunto enxuto e extensível de checks rápidos para triagem inicial. A arquitetura foi pensada
-> pra você ir plugando novos checks com o tempo (veja "Como adicionar um novo check" abaixo).
+> This **does not replace** Burp Pro's Active Scanner or a full manual assessment - it's a
+> lean, extensible set of quick checks for initial triage. The architecture was designed
+> so you can keep plugging in new checks over time (see "How to add a new check" below).
 
-## Requisitos
+## Requirements
 
 - **JDK 17+**
 - **Maven 3.8+**
-- Burp Suite Community ou Professional (testado a partir da linha 2023.x em diante, que já
-  suporta a Montoya API)
+- Burp Suite Community or Professional (tested from the 2023.x line onward, which already
+  supports the Montoya API)
 
-## Como compilar - passo a passo no Windows 10
+## How to build - step by step on Windows 10
 
-Não precisa saber Java pra isso, só seguir os passos:
+You don't need to know Java for this, just follow the steps:
 
-1. **Instale o JDK 17.**
-   Baixe o instalador "Windows x64 Installer (.msi)" do Eclipse Temurin 17 em
-   `https://adoptium.net/temurin/releases/?version=17` e execute. Deixe marcada a opção
-   "Set JAVA_HOME variable" durante a instalação.
+1. **Install JDK 17.**
+   Download the "Windows x64 Installer (.msi)" for Eclipse Temurin 17 from
+   `https://adoptium.net/temurin/releases/?version=17` and run it. Keep the
+   "Set JAVA_HOME variable" option checked during installation.
 
-2. **Instale o Maven.**
-   Baixe o `.zip` "Binary zip archive" em `https://maven.apache.org/download.cgi`, extraia em
-   `C:\Program Files\Apache\maven` (ou outra pasta de sua preferência).
+2. **Install Maven.**
+   Download the `.zip` "Binary zip archive" from `https://maven.apache.org/download.cgi`, extract it to
+   `C:\Program Files\Apache\maven` (or another folder of your choice).
 
-3. **Adicione o Maven ao PATH do Windows.**
-   - Pesquise por "Variáveis de ambiente" no menu Iniciar → "Editar as variáveis de ambiente
-     do sistema" → botão "Variáveis de Ambiente...".
-   - Em "Variáveis do sistema", selecione `Path` → "Editar" → "Novo" → adicione
-     `C:\Program Files\Apache\maven\bin` (ajuste pro caminho que você usou).
-   - Clique OK em tudo.
+3. **Add Maven to the Windows PATH.**
+   - Search for "Environment Variables" in the Start menu → "Edit the system
+     environment variables" → "Environment Variables..." button.
+   - Under "System variables", select `Path` → "Edit" → "New" → add
+     `C:\Program Files\Apache\maven\bin` (adjust to the path you used).
+   - Click OK everywhere.
 
-4. **Confira se deu certo.**
-   Abra o **Prompt de Comando** (cmd) e digite:
+4. **Check it worked.**
+   Open **Command Prompt** (cmd) and type:
    ```
    java -version
    mvn -version
    ```
-   Se ambos mostrarem uma versão (e não "comando não reconhecido"), está pronto.
+   If both show a version number (and not "command not recognized"), you're set.
 
-5. **Extraia o `rx0-burp-scanner.zip`** que te mandei em alguma pasta, ex:
-   `C:\Users\SeuUsuario\Desktop\rx0-burp-scanner`.
+5. **Extract the `rx0-burp-scanner.zip`** you were given into a folder, e.g.:
+   `C:\Users\YourUser\Desktop\rx0-burp-scanner`.
 
-6. **Compile.**
-   No Prompt de Comando:
+6. **Build it.**
+   In Command Prompt:
    ```
-   cd C:\Users\SeuUsuario\Desktop\rx0-burp-scanner
+   cd C:\Users\YourUser\Desktop\rx0-burp-scanner
    mvn clean package
    ```
-   Isso vai baixar as dependências (precisa de internet) e gerar o arquivo em:
+   This will download the dependencies (requires internet) and produce the file at:
    `target\rx0-vuln-scanner.jar`
 
-7. **Instale no Burp.**
+7. **Install it in Burp.**
    Burp Suite → **Extensions** → **Installed** → **Add** → Extension type: **Java** →
-   Extension file: selecione o `target\rx0-vuln-scanner.jar` que acabou de gerar.
+   Extension file: select the `target\rx0-vuln-scanner.jar` you just built.
 
-Se der erro de compilação, me manda o texto completo do erro que eu ajusto o código.
+If you get a build error, send the full error text and it can be fixed.
 
-## Como compilar online (sem instalar nada no PC)
+## How to build online (without installing anything locally)
 
-A opção mais confiável pra isso **não é** um "site genérico de compilar código" - a maioria
-não suporta projeto Maven multi-arquivo com dependências baixadas do Maven Central. O caminho
-certo e gratuito é o **GitHub Actions**, que eu já deixei configurado dentro do projeto
-(`.github/workflows/build.yml`): ele compila sozinho na nuvem e te entrega o `.jar` prontinho
-pra download. Passo a passo:
+The most reliable option for this is **not** a "generic online code compiler" - most of
+those don't support a multi-file Maven project with dependencies downloaded from Maven
+Central. The right, free path is **GitHub Actions**, already configured in the project
+(`.github/workflows/build.yml`): it builds automatically in the cloud and hands you the
+ready `.jar` to download. Step by step:
 
-1. Crie uma conta gratuita em `https://github.com` (se ainda não tiver).
-2. Clique em **New repository** (botão verde), dê um nome (ex: `rx0-burp-scanner`), marque
-   como **Private** (seu código fica só seu) e clique em **Create repository**.
-3. Na página do repositório recém-criado, clique em **"uploading an existing file"** (ou
+1. Create a free account at `https://github.com` (if you don't have one yet).
+2. Click **New repository** (green button), give it a name (e.g. `rx0-burp-scanner`), mark
+   it as **Private** (your code stays yours) and click **Create repository**.
+3. On the newly created repository's page, click **"uploading an existing file"** (or
    **Add file → Upload files**).
-4. Arraste a pasta `rx0-burp-scanner` inteira (ou todos os arquivos extraídos do zip) pra essa
-   área de upload. Role pra baixo e clique em **Commit changes**.
-5. Vá na aba **Actions** do repositório - o workflow "Build Rx0 Vulnerability Scanner" já vai
-   estar rodando automaticamente (ou clique em **Run workflow** se não iniciar sozinho).
-6. Espere o ícone ficar verde (✅), geralmente leva 1-2 minutos.
-7. Clique no workflow que rodou → role até **Artifacts** → baixe **rx0-vuln-scanner-jar**
-   (vem como um `.zip` contendo o `.jar` dentro - extraia).
-8. Instale esse `.jar` no Burp normalmente (Extensions → Installed → Add → Java).
+4. Drag the whole `rx0-burp-scanner` folder (or all the files extracted from the zip) into that
+   upload area. Scroll down and click **Commit changes**.
+5. Go to the repository's **Actions** tab - the "Build Rx0 Vulnerability Scanner" workflow
+   should already be running automatically (or click **Run workflow** if it didn't start on its own).
+6. Wait for the icon to turn green (✅), usually takes 1-2 minutes.
+7. Click the workflow run → scroll down to **Artifacts** → download **rx0-vuln-scanner-jar**
+   (it comes as a `.zip` containing the `.jar` inside - extract it).
+8. Install that `.jar` in Burp as usual (Extensions → Installed → Add → Java).
 
-Vantagem: o GitHub compila num ambiente limpo oficial, sem você precisar confiar código seu a
-um site de terceiros desconhecido - e você pode repetir esse processo toda vez que eu te mandar
-uma atualização do projeto.
+Benefit: GitHub builds it in a clean, official environment, with no need to trust your code to
+some unknown third-party site - and you can repeat this process every time an update
+to the project is sent your way.
 
-## Como instalar no Burp
+## How to install in Burp
 
-1. Abra o Burp Suite → **Extensions** → **Installed** → **Add**.
-2. Em **Extension type**, selecione **Java**.
-3. Em **Extension file**, aponte para `target/rx0-vuln-scanner.jar`.
-4. Clique em **Next**. Se tudo certo, o log vai mostrar a mensagem de boas-vindas da extensão.
-5. Uma nova aba **"Rx0 Scanner"** vai aparecer na barra superior do Burp.
+1. Open Burp Suite → **Extensions** → **Installed** → **Add**.
+2. Under **Extension type**, select **Java**.
+3. For **Extension file**, point to `target/rx0-vuln-scanner.jar`.
+4. Click **Next**. If everything's fine, the log will show the extension's welcome message.
+5. A new **"Rx0 Scanner"** tab will appear in Burp's top bar.
 
-## Como usar
+## How to use it
 
-1. Na aba **Rx0 Scanner**, digite a URL do host autorizado (ex: `https://meu-alvo.com`).
-2. Clique em **Iniciar scan**. A barra de progresso mostra qual check está rodando.
-3. Os achados aparecem em tempo real na tabela (severidade, título, URL).
-4. Ao fim, clique em **Gerar relatório HTML** e escolha onde salvar - o relatório abre em
-   qualquer navegador, com tema escuro e sua assinatura no rodapé.
+1. In the **Rx0 Scanner** tab, enter the URL of the authorized host (e.g. `https://my-target.com`).
+2. Click **Start scan**. The progress bar shows which check is running.
+3. Findings appear in real time in the table (severity, title, URL).
+4. When done, click **HTML Report** and choose where to save it - the report opens in
+   any browser, with a dark theme and your signature in the footer.
 
-> 💡 **Dica para o check de JWT**: antes de rodar o scan, navegue manualmente pela aplicação
-> logado (via proxy do Burp) por alguns minutos. Isso popula o histórico do Proxy com
-> requisições autenticadas, que é de onde o check de JWT extrai os tokens para analisar.
+> 💡 **Tip for the JWT check**: before running the scan, manually browse the application
+> while logged in (through the Burp proxy) for a few minutes. This populates the Proxy
+> history with authenticated requests, which is where the JWT check extracts tokens to analyze.
 
-## Como adicionar um novo check
+## How to add a new check
 
-1. Crie uma classe em `src/main/java/com/rx0/burp/scanner/checks/` implementando a interface
-   `VulnCheck` (métodos `nome()` e `executar(MontoyaApi api, String baseUrl)`).
-2. Registre a nova classe em `ScanEngine` (dentro do construtor, `checks.add(new SeuCheck())`).
-3. Recompile com `mvn clean package` e reinstale o `.jar` no Burp.
+1. Create a class under `src/main/java/com/rx0/burp/scanner/checks/` implementing the
+   `VulnCheck` interface (the `name()` and `execute(MontoyaApi api, String baseUrl)` methods).
+2. Register the new class in `ScanEngine` (inside the constructor, `checks.add(new YourCheck())`).
+3. Rebuild with `mvn clean package` and reinstall the `.jar` in Burp.
 
-## Estrutura do projeto
+## Project structure
 
 ```
 rx0-burp-scanner/
 ├── pom.xml
 └── src/main/java/com/rx0/burp/
-    ├── Rx0ScannerExtension.java      # ponto de entrada (BurpExtension)
+    ├── Rx0ScannerExtension.java      # entry point (BurpExtension)
     ├── model/
-    │   ├── Finding.java              # representa um achado
-    │   └── Severity.java             # CRITICA / ALTA / MEDIA / BAIXA / INFO
+    │   ├── Finding.java              # represents one finding
+    │   └── Severity.java             # CRITICAL / HIGH / MEDIUM / LOW / INFO
     ├── scanner/
-    │   ├── VulnCheck.java            # interface que todo check implementa
-    │   ├── ScanEngine.java           # orquestra a execução de todos os checks
-    │   └── checks/                   # cada classe = um check de vulnerabilidade
+    │   ├── VulnCheck.java            # interface every check implements
+    │   ├── ScanEngine.java           # orchestrates running every check
+    │   └── checks/                   # each class = one vulnerability check
     ├── report/
-    │   └── HtmlReportGenerator.java  # monta o HTML dark final
+    │   └── HtmlReportGenerator.java  # builds the final dark-themed HTML
     └── ui/
-        └── Rx0Panel.java             # aba Swing dentro do Burp
+        └── Rx0Panel.java             # Swing tab inside Burp
 ```
 
 ---
-Criado por **Rx0** - [@rodrigocoutinho91](https://www.instagram.com/rodrigocoutinho91/)
+Created by **Rx0** - [@rodrigocoutinho91](https://www.instagram.com/rodrigocoutinho91/)

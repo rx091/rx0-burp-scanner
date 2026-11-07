@@ -13,28 +13,28 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Testa parâmetros comuns de redirecionamento com uma URL externa forjada
- * e verifica se o servidor redireciona (3xx + Location) para ela.
- * Criado por Rx0 - @rodrigocoutinho91
+ * Tests common redirect parameters with a forged external URL and checks
+ * whether the server redirects (3xx + Location) to it.
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class OpenRedirectCheck implements VulnCheck {
 
     private static final String[] PARAM_NAMES = {"redirect", "redirect_uri", "url", "next", "return", "returnUrl", "continue", "dest"};
-    private static final String DOMINIO_EXTERNO = "rx0-redirect-test.evil.example";
+    private static final String EXTERNAL_DOMAIN = "rx0-redirect-test.evil.example";
 
     @Override
-    public String nome() {
+    public String name() {
         return "Open Redirect";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String param : PARAM_NAMES) {
             try {
-                String payload = "https://" + DOMINIO_EXTERNO;
+                String payload = "https://" + EXTERNAL_DOMAIN;
                 String testUrl = base + "/?" + param + "=" + java.net.URLEncoder.encode(payload, "UTF-8");
                 HttpRequest req = HttpRequest.httpRequestFromUrl(testUrl);
                 HttpResponse resp = api.http().sendRequest(req).response();
@@ -45,20 +45,20 @@ public class OpenRedirectCheck implements VulnCheck {
                     Optional<HttpHeader> location = resp.headers().stream()
                             .filter(h -> h.name().equalsIgnoreCase("Location"))
                             .findFirst();
-                    if (location.isPresent() && location.get().value().contains(DOMINIO_EXTERNO)) {
-                        achados.add(new Finding(
-                                "Possível Open Redirect no parâmetro '" + param + "'",
-                                Severity.MEDIA,
+                    if (location.isPresent() && location.get().value().contains(EXTERNAL_DOMAIN)) {
+                        findings.add(new Finding(
+                                "Possible Open Redirect in parameter '" + param + "'",
+                                Severity.MEDIUM,
                                 testUrl,
-                                "A aplicação redirecionou (HTTP " + status + ") para um domínio externo controlado a partir do valor do parâmetro, sem validar se o destino é confiável.",
+                                "The application redirected (HTTP " + status + ") to an attacker-controlled external domain taken from the parameter value, without validating whether the destination is trusted.",
                                 "Location: " + location.get().value(),
-                                "Valide o destino do redirecionamento contra uma allowlist de domínios/paths internos, ou use redirecionamentos relativos."));
+                                "Validate the redirect destination against an allowlist of trusted internal domains/paths, or use relative redirects."));
                     }
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de Open Redirect (param " + param + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in Open Redirect check (param " + param + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 }

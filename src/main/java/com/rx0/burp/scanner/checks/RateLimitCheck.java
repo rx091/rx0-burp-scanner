@@ -11,72 +11,72 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Dispara uma rajada de requisições para endpoints de login/API comuns e
- * verifica se o servidor aplica algum tipo de rate limiting (HTTP 429, ou
- * bloqueio progressivo). Ausência disso facilita brute-force de credenciais
- * e abuso de API (API4:2023 Unrestricted Resource Consumption).
+ * Fires a burst of requests at common login/API endpoints and checks whether
+ * the server applies any form of rate limiting (HTTP 429, or progressive
+ * blocking). Its absence makes credential brute-forcing and API abuse easier
+ * (API4:2023 Unrestricted Resource Consumption).
  *
- * O volume é propositalmente baixo (12 requisições) para não gerar carga
- * excessiva — ajuste RAJADA se quiser um teste mais agressivo.
+ * The volume is deliberately low (12 requests) to avoid generating excessive
+ * load — adjust BURST_SIZE for a more aggressive test.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class RateLimitCheck implements VulnCheck {
 
     private static final String[] PATHS = {"/api/login", "/api/v1/login", "/api/auth/login", "/login"};
-    private static final int RAJADA = 12;
+    private static final int BURST_SIZE = 12;
 
     @Override
-    public String nome() {
-        return "Rate limiting em endpoints de login/API";
+    public String name() {
+        return "Rate limiting on login/API endpoints";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String path : PATHS) {
             try {
                 String url = base + path;
-                String corpo = "{\"username\":\"rx0_test_user\",\"password\":\"senha_invalida_" + System.currentTimeMillis() + "\"}";
+                String body = "{\"username\":\"rx0_test_user\",\"password\":\"invalid_password_" + System.currentTimeMillis() + "\"}";
 
-                int sucessosSemBloqueio = 0;
-                boolean algumaResposta = false;
+                int unblockedSuccesses = 0;
+                boolean gotAnyResponse = false;
 
-                for (int i = 0; i < RAJADA; i++) {
+                for (int i = 0; i < BURST_SIZE; i++) {
                     HttpRequest req = HttpRequest.httpRequestFromUrl(url)
                             .withMethod("POST")
                             .withAddedHeader("Content-Type", "application/json")
-                            .withBody(corpo);
+                            .withBody(body);
                     HttpResponse resp = api.http().sendRequest(req).response();
                     if (resp == null) continue;
-                    algumaResposta = true;
+                    gotAnyResponse = true;
 
                     int status = resp.statusCode();
                     if (status == 429 || status == 403) {
-                        sucessosSemBloqueio = -1; // encontrou bloqueio, interrompe a rajada
+                        unblockedSuccesses = -1; // found a block, stop the burst
                         break;
                     }
-                    // considera "sem bloqueio" qualquer resposta normal (200/400/401) que não seja rate-limit
-                    sucessosSemBloqueio++;
+                    // treats any normal response (200/400/401) that isn't a rate-limit as "unblocked"
+                    unblockedSuccesses++;
                 }
 
-                if (algumaResposta && sucessosSemBloqueio >= RAJADA) {
-                    achados.add(new Finding(
-                            "Possível ausência de rate limiting em " + path,
-                            Severity.MEDIA,
+                if (gotAnyResponse && unblockedSuccesses >= BURST_SIZE) {
+                    findings.add(new Finding(
+                            "Possible absence of rate limiting at " + path,
+                            Severity.MEDIUM,
                             url,
-                            "Foram enviadas " + RAJADA + " tentativas de login seguidas sem que o servidor retornasse " +
-                                    "HTTP 429 (Too Many Requests) ou 403 em nenhum momento. Isso pode facilitar ataques de " +
-                                    "força bruta e credential stuffing.",
-                            RAJADA + " requisições enviadas, nenhuma bloqueada.",
-                            "Implemente rate limiting (por IP e/ou por conta) e considere CAPTCHA ou bloqueio progressivo após tentativas falhas."));
+                            BURST_SIZE + " consecutive login attempts were sent without the server ever returning " +
+                                    "HTTP 429 (Too Many Requests) or 403. This can make brute-force attacks and " +
+                                    "credential stuffing easier.",
+                            BURST_SIZE + " requests sent, none blocked.",
+                            "Implement rate limiting (per IP and/or per account) and consider CAPTCHA or progressive lockout after failed attempts."));
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de rate limit (" + path + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in rate limit check (" + path + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 }

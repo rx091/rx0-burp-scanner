@@ -15,17 +15,17 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Check ESTÁTICO (não executa JS de verdade): baixa a página inicial e
- * procura por padrões de código onde uma FONTE controlável pelo atacante
- * (location.hash, location.search, document.URL, window.name...) alimenta
- * diretamente um SINK perigoso (innerHTML, document.write, eval,
- * insertAdjacentHTML...) no mesmo trecho de JavaScript — um padrão clássico
- * de DOM-based XSS.
+ * STATIC check (does not actually execute JS): downloads the home page and
+ * looks for code patterns where an attacker-controllable SOURCE
+ * (location.hash, location.search, document.URL, window.name...) feeds
+ * directly into a dangerous SINK (innerHTML, document.write, eval,
+ * insertAdjacentHTML...) within the same chunk of JavaScript — a classic
+ * DOM-based XSS pattern.
  *
- * Isso é só um SINAL para investigação manual (ex: abrir no DevTools e
- * testar `#<img src=x onerror=alert(1)>` na URL) — não confirma exploração.
+ * This is only a SIGNAL for manual investigation (e.g. open DevTools and test
+ * `#<img src=x onerror=alert(1)>` in the URL) — it does not confirm exploitation.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class DomXssCheck implements VulnCheck {
 
@@ -40,7 +40,7 @@ public class DomXssCheck implements VulnCheck {
             Pattern.compile("\\$\\([^)]*\\)\\.html\\s*\\("), // jQuery .html()
     };
 
-    private static final Pattern[] FONTES_CONTROLAVEIS = {
+    private static final Pattern[] CONTROLLABLE_SOURCES = {
             Pattern.compile("location\\.hash"),
             Pattern.compile("location\\.search"),
             Pattern.compile("location\\.href"),
@@ -50,65 +50,66 @@ public class DomXssCheck implements VulnCheck {
             Pattern.compile("URLSearchParams"),
     };
 
-    private static final int JANELA_DE_PROXIMIDADE = 150; // caracteres de distância considerados "mesmo trecho"
+    private static final int PROXIMITY_WINDOW = 150; // character distance considered "the same chunk"
 
     @Override
-    public String nome() {
-        return "DOM-based XSS (análise estática de source/sink)";
+    public String name() {
+        return "DOM-based XSS (static source/sink analysis)";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         try {
             HttpRequest req = HttpRequest.httpRequestFromUrl(baseUrl);
             HttpResponse resp = api.http().sendRequest(req).response();
-            if (resp == null) return achados;
+            if (resp == null) return findings;
 
             String body = resp.bodyToString();
-            if (body == null || body.isBlank()) return achados;
+            if (body == null || body.isBlank()) return findings;
 
-            // Mapa achado -> posição, pra evitar reportar o mesmo par source+sink várias vezes
-            Map<String, Integer> ocorrenciasReportadas = new LinkedHashMap<>();
+            // Map of finding -> position, to avoid reporting the same source+sink pair multiple times
+            Map<String, Integer> reportedOccurrences = new LinkedHashMap<>();
 
             for (Pattern sinkPattern : SINKS) {
                 Matcher sinkMatcher = sinkPattern.matcher(body);
                 while (sinkMatcher.find()) {
-                    int inicioJanela = Math.max(0, sinkMatcher.start() - JANELA_DE_PROXIMIDADE);
-                    int fimJanela = Math.min(body.length(), sinkMatcher.end() + JANELA_DE_PROXIMIDADE);
-                    String trecho = body.substring(inicioJanela, fimJanela);
+                    int windowStart = Math.max(0, sinkMatcher.start() - PROXIMITY_WINDOW);
+                    int windowEnd = Math.min(body.length(), sinkMatcher.end() + PROXIMITY_WINDOW);
+                    String snippet = body.substring(windowStart, windowEnd);
 
-                    for (Pattern fontePattern : FONTES_CONTROLAVEIS) {
-                        Matcher fonteMatcher = fontePattern.matcher(trecho);
-                        if (fonteMatcher.find()) {
-                            String chave = sinkPattern.pattern() + "|" + fontePattern.pattern();
-                            if (ocorrenciasReportadas.containsKey(chave)) continue;
-                            ocorrenciasReportadas.put(chave, sinkMatcher.start());
+                    for (Pattern sourcePattern : CONTROLLABLE_SOURCES) {
+                        Matcher sourceMatcher = sourcePattern.matcher(snippet);
+                        if (sourceMatcher.find()) {
+                            String key = sinkPattern.pattern() + "|" + sourcePattern.pattern();
+                            if (reportedOccurrences.containsKey(key)) continue;
+                            reportedOccurrences.put(key, sinkMatcher.start());
 
-                            achados.add(new Finding(
-                                    "Possível DOM-based XSS: fonte controlável próxima de sink perigoso",
-                                    Severity.MEDIA,
+                            findings.add(new Finding(
+                                    "Possible DOM-based XSS: controllable source near a dangerous sink",
+                                    Severity.MEDIUM,
                                     baseUrl,
-                                    "No JavaScript da página foi encontrada uma fonte controlável pelo atacante ('" + fonteMatcher.pattern()
-                                            + "') a poucos caracteres de distância de um sink perigoso ('" + sinkPattern.pattern()
-                                            + "'). Isso é um padrão comum de DOM-based XSS, onde dados da própria URL são escritos " +
-                                            "diretamente no DOM sem sanitização. Requer confirmação manual no navegador (DevTools).",
-                                    "Trecho (resumido): " + resumir(trecho.trim(), 200),
-                                    "Nunca escreva fontes controláveis pelo usuário (location.hash, location.search, etc) diretamente " +
-                                            "em sinks de HTML/execução. Use textContent em vez de innerHTML, e sanitize com uma biblioteca " +
-                                            "como DOMPurify quando HTML dinâmico for realmente necessário."));
+                                    "An attacker-controllable source ('" + sourceMatcher.pattern()
+                                            + "') was found a few characters away from a dangerous sink ('" + sinkPattern.pattern()
+                                            + "') in the page's JavaScript. This is a common DOM-based XSS pattern, where data " +
+                                            "straight from the URL is written directly into the DOM without sanitization. Requires " +
+                                            "manual confirmation in the browser (DevTools).",
+                                    "Snippet (truncated): " + summarize(snippet.trim(), 200),
+                                    "Never write user-controllable sources (location.hash, location.search, etc) directly into " +
+                                            "HTML/execution sinks. Use textContent instead of innerHTML, and sanitize with a library " +
+                                            "like DOMPurify when dynamic HTML is truly necessary."));
                         }
                     }
                 }
             }
         } catch (Exception e) {
-            api.logging().logToError("[Rx0] Erro no check de DOM XSS: " + e.getMessage());
+            api.logging().logToError("[Rx0] Error in DOM XSS check: " + e.getMessage());
         }
-        return achados;
+        return findings;
     }
 
-    private String resumir(String texto, int max) {
-        if (texto.length() <= max) return texto;
-        return texto.substring(0, max) + "...";
+    private String summarize(String text, int max) {
+        if (text.length() <= max) return text;
+        return text.substring(0, max) + "...";
     }
 }

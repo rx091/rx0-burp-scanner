@@ -51,31 +51,31 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 
 /**
- * Orquestra a execução de todos os VulnCheck registrados contra um host alvo.
+ * Orchestrates the execution of every registered VulnCheck against a target host.
  *
- * Desde a versão com paralelização: os checks rodam concorrentemente em um
- * pool de threads fixo (em vez de um atrás do outro), o que reduz bastante o
- * tempo total de scan. O número de threads é deliberadamente moderado (6) pra
- * não sobrecarregar o alvo nem disparar rate-limiting/WAF de forma agressiva.
+ * Since the parallelization update: checks run concurrently in a fixed thread
+ * pool (instead of one after another), which significantly reduces total scan
+ * time. The thread count is deliberately moderate (6) to avoid overloading the
+ * target or aggressively triggering rate-limiting/WAF defenses.
  *
- * Também calcula UMA VEZ por scan o FalsePositiveGuard e inicia UMA VEZ o
- * InteractshClient (confirmação out-of-band) — ambos compartilhados via
- * ScanContext com todos os checks.
+ * Also calculates the FalsePositiveGuard and starts the InteractshClient
+ * (out-of-band confirmation) ONCE per scan — both shared via ScanContext with
+ * every check.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class ScanEngine {
 
-    private static final int THREADS_SIMULTANEAS = 6;
-    private static final int SEGUNDOS_ESPERA_OOB = 8;
+    private static final int CONCURRENT_THREADS = 6;
+    private static final int OOB_WAIT_SECONDS = 8;
 
     private final List<VulnCheck> checks;
 
     public ScanEngine() {
         this.checks = new ArrayList<>();
-        // Registro central de todos os checks disponíveis.
-        // Para adicionar um novo check no futuro: crie a classe em scanner.checks
-        // implementando VulnCheck e adicione uma linha aqui.
+        // Central registry of every available check.
+        // To add a new check in the future: create the class in scanner.checks
+        // implementing VulnCheck and add a line here.
         checks.add(new SecurityHeadersCheck());
         checks.add(new CookieFlagsCheck());
         checks.add(new CorsMisconfigCheck());
@@ -85,7 +85,7 @@ public class ScanEngine {
         checks.add(new DomXssCheck());
         checks.add(new SqlErrorCheck());
         checks.add(new OpenRedirectCheck());
-        // --- Checks focados em API (OWASP API Security Top 10) ---
+        // --- API-focused checks (OWASP API Security Top 10) ---
         checks.add(new ApiEndpointDiscoveryCheck());
         checks.add(new IdorSequentialCheck());
         checks.add(new ExcessiveDataExposureCheck());
@@ -94,13 +94,13 @@ public class ScanEngine {
         checks.add(new HttpMethodsCheck());
         checks.add(new RateLimitCheck());
         checks.add(new VerboseApiErrorCheck());
-        // --- Injeção / inclusão de arquivo / SSRF ---
+        // --- Injection / file inclusion / SSRF ---
         checks.add(new SsrfCheck());
         checks.add(new PathTraversalCheck());
         checks.add(new RfiCheck());
         checks.add(new NoSqlInjectionCheck());
         checks.add(new MassAssignmentCheck());
-        // --- Baseados na lista de checks do Burp Scanner (OS cmd, XXE, SSTI, LDAP/XPath...) ---
+        // --- Based on the Burp Scanner check list (OS cmd, XXE, SSTI, LDAP/XPath...) ---
         checks.add(new OsCommandInjectionCheck());
         checks.add(new XxeCheck());
         checks.add(new SstiCheck());
@@ -110,7 +110,7 @@ public class ScanEngine {
         checks.add(new SensitiveDataInBodyCheck());
         checks.add(new CsrfTokenCheck());
         checks.add(new ViewStateAndAutocompleteCheck());
-        // --- Mais uma leva de melhorias: fingerprint, host header, upload, cache poisoning, lógica de negócio ---
+        // --- Further improvements: fingerprinting, host header, upload, cache poisoning, business logic ---
         checks.add(new TechFingerprintCheck());
         checks.add(new HostHeaderInjectionCheck());
         checks.add(new FileUploadCheck());
@@ -118,57 +118,58 @@ public class ScanEngine {
         checks.add(new BusinessLogicCheck());
     }
 
-    public int totalDeChecks() {
+    public int totalChecks() {
         return checks.size();
     }
 
-    /** Variante retrocompatível (sem autenticação, sem modo stealth). */
-    public List<Finding> executarScanCompleto(MontoyaApi api, String baseUrl, BiConsumer<String, Integer> progressoCb) {
-        return executarScanCompleto(api, baseUrl, progressoCb, null, false);
+    /** Backward-compatible variant (no authentication, no stealth mode). */
+    public List<Finding> runFullScan(MontoyaApi api, String baseUrl, BiConsumer<String, Integer> progressCallback) {
+        return runFullScan(api, baseUrl, progressCallback, null, false);
     }
 
     /**
-     * Executa todos os checks contra a URL base informada, em paralelo.
-     * @param api           Montoya API
-     * @param baseUrl       URL alvo normalizada (ex: https://alvo.com)
-     * @param progressoCb   callback(nomeDoCheckConcluido, quantidadeConcluidaAteAgora) —
-     *                      chamado quando CADA check termina (ordem não é mais
-     *                      sequencial por causa da paralelização)
-     * @param cookieAutenticacao valor a enviar no header Cookie em toda requisição
-     *                            (ex: "sessionid=abc123; outro=valor"), ou null/vazio
-     *                            para scan sem sessão (comportamento padrão de sempre)
-     * @param modoStealth   se true, roda com 1 thread só e um pequeno delay entre
-     *                      checks, pra reduzir a chance de disparar WAF/rate-limit
-     * @return lista consolidada e deduplicada de achados de todos os checks
+     * Runs every check against the given base URL, in parallel.
+     * @param api              Montoya API
+     * @param baseUrl          normalized target URL (e.g. https://target.com)
+     * @param progressCallback callback(finishedCheckName, completedCountSoFar) —
+     *                         called when EACH check finishes (order is no
+     *                         longer sequential due to parallelization)
+     * @param authCookie       value to send in the Cookie header on every request
+     *                         (e.g. "sessionid=abc123; other=value"), or null/empty
+     *                         for an unauthenticated scan (the default behavior)
+     * @param stealthMode      if true, runs with a single thread and a small delay
+     *                         between checks, to reduce the chance of triggering
+     *                         a WAF/rate-limit
+     * @return consolidated, deduplicated list of findings from every check
      */
-    public List<Finding> executarScanCompleto(MontoyaApi api, String baseUrl, BiConsumer<String, Integer> progressoCb,
-                                               String cookieAutenticacao, boolean modoStealth) {
-        List<Finding> achadosTotais = Collections.synchronizedList(new ArrayList<>());
+    public List<Finding> runFullScan(MontoyaApi api, String baseUrl, BiConsumer<String, Integer> progressCallback,
+                                      String authCookie, boolean stealthMode) {
+        List<Finding> allFindings = Collections.synchronizedList(new ArrayList<>());
 
-        // Calcula UMA VEZ o baseline de falso-positivo, roda o crawler leve e inicia o cliente OOB.
-        FalsePositiveGuard guard = FalsePositiveGuard.calcular(api, baseUrl);
-        CrawlerLeve crawler = CrawlerLeve.rastrear(api, baseUrl);
-        InteractshClient interactsh = InteractshClient.iniciar(api);
-        ScanContext ctx = new ScanContext(guard, interactsh, crawler, cookieAutenticacao);
+        // Calculate the false-positive baseline, run the light crawler and start the OOB client, ONCE.
+        FalsePositiveGuard guard = FalsePositiveGuard.calculate(api, baseUrl);
+        LightCrawler crawler = LightCrawler.crawl(api, baseUrl);
+        InteractshClient interactsh = InteractshClient.start(api);
+        ScanContext ctx = new ScanContext(guard, interactsh, crawler, authCookie);
 
-        AtomicInteger concluidos = new AtomicInteger(0);
-        int threads = modoStealth ? 1 : Math.max(1, Math.min(THREADS_SIMULTANEAS, checks.size()));
+        AtomicInteger completed = new AtomicInteger(0);
+        int threads = stealthMode ? 1 : Math.max(1, Math.min(CONCURRENT_THREADS, checks.size()));
         ExecutorService pool = Executors.newFixedThreadPool(threads);
 
         for (VulnCheck check : checks) {
             pool.submit(() -> {
                 try {
-                    if (modoStealth) {
-                        Thread.sleep(800); // pequeno respiro entre checks em modo discreto
+                    if (stealthMode) {
+                        Thread.sleep(800); // small breather between checks in discreet mode
                     }
-                    List<Finding> achados = check.executar(api, baseUrl, ctx);
-                    achadosTotais.addAll(achados);
+                    List<Finding> findings = check.execute(api, baseUrl, ctx);
+                    allFindings.addAll(findings);
                 } catch (Exception e) {
-                    api.logging().logToError("[Rx0] Falha ao executar check '" + check.nome() + "': " + e.getMessage());
+                    api.logging().logToError("[Rx0] Failed to run check '" + check.name() + "': " + e.getMessage());
                 } finally {
-                    int atual = concluidos.incrementAndGet();
-                    if (progressoCb != null) {
-                        progressoCb.accept(check.nome(), atual);
+                    int current = completed.incrementAndGet();
+                    if (progressCallback != null) {
+                        progressCallback.accept(check.name(), current);
                     }
                 }
             });
@@ -176,9 +177,9 @@ public class ScanEngine {
 
         pool.shutdown();
         try {
-            boolean terminouATempo = pool.awaitTermination(10, TimeUnit.MINUTES);
-            if (!terminouATempo) {
-                api.logging().logToError("[Rx0] Scan excedeu o tempo limite de 10 minutos — resultados parciais serão usados.");
+            boolean finishedInTime = pool.awaitTermination(10, TimeUnit.MINUTES);
+            if (!finishedInTime) {
+                api.logging().logToError("[Rx0] Scan exceeded the 10-minute time limit — partial results will be used.");
                 pool.shutdownNow();
             }
         } catch (InterruptedException e) {
@@ -186,33 +187,33 @@ public class ScanEngine {
             pool.shutdownNow();
         }
 
-        // Coleta achados confirmados via interação out-of-band real (SSRF/RFI/XXE/OS Command), se disponível.
-        if (interactsh.isDisponivel()) {
-            if (progressoCb != null) {
-                progressoCb.accept("Aguardando confirmação out-of-band (interactsh)...", checks.size());
+        // Collect findings confirmed via a real out-of-band interaction (SSRF/RFI/XXE/OS Command), if available.
+        if (interactsh.isAvailable()) {
+            if (progressCallback != null) {
+                progressCallback.accept("Waiting for out-of-band confirmation (interactsh)...", checks.size());
             }
             try {
-                List<Finding> achadosOob = interactsh.aguardarEColetarInteracoes(SEGUNDOS_ESPERA_OOB);
-                achadosTotais.addAll(achadosOob);
+                List<Finding> oobFindings = interactsh.waitAndCollectInteractions(OOB_WAIT_SECONDS);
+                allFindings.addAll(oobFindings);
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro ao coletar interações OOB: " + e.getMessage());
+                api.logging().logToError("[Rx0] Error collecting OOB interactions: " + e.getMessage());
             }
         }
 
-        return deduplicar(new ArrayList<>(achadosTotais));
+        return deduplicate(new ArrayList<>(allFindings));
     }
 
     /**
-     * Remove achados duplicados (mesmo título + mesma URL) que diferentes checks
-     * ou a confirmação OOB possam ter gerado para o mesmo problema subjacente.
-     * Mantém a primeira ocorrência de cada combinação.
+     * Removes duplicate findings (same title + same URL) that different checks
+     * or the OOB confirmation may have generated for the same underlying issue.
+     * Keeps the first occurrence of each combination.
      */
-    private List<Finding> deduplicar(List<Finding> achados) {
-        Map<String, Finding> unicos = new LinkedHashMap<>();
-        for (Finding f : achados) {
-            String chave = f.getTitulo() + "|" + f.getUrl();
-            unicos.putIfAbsent(chave, f);
+    private List<Finding> deduplicate(List<Finding> findings) {
+        Map<String, Finding> unique = new LinkedHashMap<>();
+        for (Finding f : findings) {
+            String key = f.getTitle() + "|" + f.getUrl();
+            unique.putIfAbsent(key, f);
         }
-        return new ArrayList<>(unicos.values());
+        return new ArrayList<>(unique.values());
     }
 }

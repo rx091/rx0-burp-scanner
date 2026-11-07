@@ -12,18 +12,18 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Envia, em endpoints típicos de cadastro/atualização de perfil, campos
- * EXTRAS que um usuário comum nunca deveria poder setar (isAdmin, role,
- * verified, balance, is_staff...) e verifica se a resposta ECOA esses
- * campos com o valor privilegiado que enviamos — indício de Mass
- * Assignment (API6:2023 Unrestricted Access to Sensitive Business Flows /
- * API3:2023 Broken Object Property Level Authorization).
+ * Sends, on typical registration/profile-update endpoints, EXTRA fields that
+ * a regular user should never be able to set (isAdmin, role, verified,
+ * balance, is_staff...) and checks whether the response ECHOES those fields
+ * back with the privileged value we sent — a sign of Mass Assignment
+ * (API6:2023 Unrestricted Access to Sensitive Business Flows / API3:2023
+ * Broken Object Property Level Authorization).
  *
- * É um sinal, não uma confirmação definitiva: sempre valide manualmente se
- * o campo realmente foi persistido (ex: deslogando e logando de novo, ou
- * consultando o recurso em uma segunda requisição).
+ * This is a signal, not a definitive confirmation: always manually verify
+ * whether the field was actually persisted (e.g. by logging out and back in,
+ * or by querying the resource in a second request).
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class MassAssignmentCheck implements VulnCheck {
 
@@ -32,8 +32,8 @@ public class MassAssignmentCheck implements VulnCheck {
             "/api/profile", "/api/me", "/api/account"
     };
 
-    // nome do campo privilegiado -> valor que tentamos injetar
-    private static final String[][] CAMPOS_PRIVILEGIADOS = {
+    // privileged field name -> value we try to inject
+    private static final String[][] PRIVILEGED_FIELDS = {
             {"isAdmin", "true"},
             {"is_admin", "true"},
             {"role", "\"admin\""},
@@ -46,66 +46,66 @@ public class MassAssignmentCheck implements VulnCheck {
     };
 
     @Override
-    public String nome() {
-        return "Mass Assignment (campos privilegiados em cadastro/perfil)";
+    public String name() {
+        return "Mass Assignment (privileged fields on registration/profile)";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String path : PATHS) {
             try {
                 String url = base + path;
-                String usuarioTeste = "rx0_mass_assign_" + (System.currentTimeMillis() % 1000000);
+                String testUser = "rx0_mass_assign_" + (System.currentTimeMillis() % 1000000);
 
-                StringBuilder corpo = new StringBuilder("{");
-                corpo.append("\"username\":\"").append(usuarioTeste).append("\",");
-                corpo.append("\"email\":\"").append(usuarioTeste).append("@rx0-test.invalid\",");
-                corpo.append("\"password\":\"SenhaTeste123!\",");
-                for (int i = 0; i < CAMPOS_PRIVILEGIADOS.length; i++) {
-                    corpo.append("\"").append(CAMPOS_PRIVILEGIADOS[i][0]).append("\":").append(CAMPOS_PRIVILEGIADOS[i][1]);
-                    if (i < CAMPOS_PRIVILEGIADOS.length - 1) corpo.append(",");
+                StringBuilder body = new StringBuilder("{");
+                body.append("\"username\":\"").append(testUser).append("\",");
+                body.append("\"email\":\"").append(testUser).append("@rx0-test.invalid\",");
+                body.append("\"password\":\"TestPassword123!\",");
+                for (int i = 0; i < PRIVILEGED_FIELDS.length; i++) {
+                    body.append("\"").append(PRIVILEGED_FIELDS[i][0]).append("\":").append(PRIVILEGED_FIELDS[i][1]);
+                    if (i < PRIVILEGED_FIELDS.length - 1) body.append(",");
                 }
-                corpo.append("}");
+                body.append("}");
 
                 HttpRequest req = HttpRequest.httpRequestFromUrl(url)
                         .withMethod("POST")
                         .withAddedHeader("Content-Type", "application/json")
-                        .withBody(corpo.toString());
+                        .withBody(body.toString());
                 HttpResponse resp = api.http().sendRequest(req).response();
                 if (resp == null) continue;
 
                 String respBody = resp.bodyToString();
                 if (respBody == null || resp.statusCode() >= 400) continue;
 
-                for (String[] campo : CAMPOS_PRIVILEGIADOS) {
-                    String nomeCampo = campo[0];
-                    String valorEsperado = campo[1].replace("\"", "");
-                    Pattern p = Pattern.compile("\"" + Pattern.quote(nomeCampo) + "\"\\s*:\\s*\"?" + Pattern.quote(valorEsperado) + "\"?",
+                for (String[] field : PRIVILEGED_FIELDS) {
+                    String fieldName = field[0];
+                    String expectedValue = field[1].replace("\"", "");
+                    Pattern p = Pattern.compile("\"" + Pattern.quote(fieldName) + "\"\\s*:\\s*\"?" + Pattern.quote(expectedValue) + "\"?",
                             Pattern.CASE_INSENSITIVE);
                     if (p.matcher(respBody).find()) {
-                        achados.add(new Finding(
-                                "Possível Mass Assignment: campo '" + nomeCampo + "' aceito em " + path,
-                                Severity.ALTA,
+                        findings.add(new Finding(
+                                "Possible Mass Assignment: field '" + fieldName + "' accepted at " + path,
+                                Severity.HIGH,
                                 url,
-                                "Enviamos o campo privilegiado '" + nomeCampo + "' com valor '" + valorEsperado + "' junto do cadastro, " +
-                                        "e a resposta ecoou esse mesmo valor de volta — sinal de que o backend está atribuindo campos do " +
-                                        "JSON diretamente ao modelo/entidade sem uma allowlist explícita de campos permitidos.",
-                                "Campo testado: " + nomeCampo + "=" + valorEsperado + " | Confirme manualmente se foi persistido de fato.",
-                                "Nunca faça bind direto do JSON recebido para a entidade do banco. Use DTOs de entrada explícitos " +
-                                        "(allowlist de campos) e nunca aceite alteração de campos sensíveis (role, isAdmin, balance) via endpoint público.",
-                                "1) Repita o cadastro com o usuário '" + usuarioTeste + "' e, em seguida, tente LOGAR com essas credenciais " +
-                                        "(username: " + usuarioTeste + " / senha: SenhaTeste123!). 2) Uma vez logado, acesse funcionalidades " +
-                                        "restritas a admin (painel administrativo, endpoints /api/admin/*) pra confirmar se o campo '" + nomeCampo +
-                                        "' realmente elevou o privilégio. 3) Isso demonstra escalação de privilégio completa a partir de um cadastro público."));
+                                "We sent the privileged field '" + fieldName + "' with value '" + expectedValue + "' alongside the registration, " +
+                                        "and the response echoed that same value back — a sign the backend is assigning fields from the " +
+                                        "JSON directly to the model/entity with no explicit allowlist of permitted fields.",
+                                "Field tested: " + fieldName + "=" + expectedValue + " | Manually confirm whether it was actually persisted.",
+                                "Never bind the received JSON directly to the database entity. Use explicit input DTOs " +
+                                        "(field allowlist) and never accept changes to sensitive fields (role, isAdmin, balance) through a public endpoint.",
+                                "1) Repeat the registration with user '" + testUser + "' and then try LOGGING IN with those credentials " +
+                                        "(username: " + testUser + " / password: TestPassword123!). 2) Once logged in, access admin-restricted " +
+                                        "functionality (admin panel, /api/admin/* endpoints) to confirm whether field '" + fieldName +
+                                        "' really elevated the privilege. 3) This demonstrates full privilege escalation starting from a public signup."));
                     }
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de Mass Assignment (" + path + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in Mass Assignment check (" + path + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 }

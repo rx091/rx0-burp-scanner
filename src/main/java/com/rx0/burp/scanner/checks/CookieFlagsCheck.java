@@ -12,58 +12,58 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Verifica se os cookies setados pelo servidor possuem as flags Secure, HttpOnly e SameSite.
- * Criado por Rx0 - @rodrigocoutinho91
+ * Checks whether cookies set by the server have the Secure, HttpOnly and SameSite flags.
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class CookieFlagsCheck implements VulnCheck {
 
     @Override
-    public String nome() {
-        return "Flags de cookies (Secure/HttpOnly/SameSite)";
+    public String name() {
+        return "Cookie flags (Secure/HttpOnly/SameSite)";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        List<Finding> findings = new ArrayList<>();
         try {
             HttpRequest req = HttpRequest.httpRequestFromUrl(baseUrl);
             HttpResponse resp = api.http().sendRequest(req).response();
-            if (resp == null) return achados;
+            if (resp == null) return findings;
 
             for (HttpHeader h : resp.headers()) {
                 if (!h.name().equalsIgnoreCase("Set-Cookie")) continue;
                 String cookie = h.value();
-                String nomeCookie = cookie.split("=", 2)[0].trim();
+                String cookieName = cookie.split("=", 2)[0].trim();
                 String lower = cookie.toLowerCase();
 
                 if (!lower.contains("secure")) {
-                    achados.add(new Finding(
-                            "Cookie '" + nomeCookie + "' sem flag Secure",
-                            Severity.MEDIA, baseUrl,
-                            "O cookie pode ser transmitido em conexões HTTP não criptografadas.",
+                    findings.add(new Finding(
+                            "Cookie '" + cookieName + "' missing the Secure flag",
+                            Severity.MEDIUM, baseUrl,
+                            "The cookie can be transmitted over unencrypted HTTP connections.",
                             cookie,
-                            "Adicione a flag Secure ao cookie para restringir o envio apenas via HTTPS."));
+                            "Add the Secure flag to the cookie to restrict it to HTTPS only."));
                 }
                 if (!lower.contains("httponly")) {
-                    achados.add(new Finding(
-                            "Cookie '" + nomeCookie + "' sem flag HttpOnly",
-                            Severity.MEDIA, baseUrl,
-                            "O cookie pode ser lido via JavaScript (document.cookie), facilitando roubo via XSS.",
+                    findings.add(new Finding(
+                            "Cookie '" + cookieName + "' missing the HttpOnly flag",
+                            Severity.MEDIUM, baseUrl,
+                            "The cookie can be read via JavaScript (document.cookie), making theft via XSS easier.",
                             cookie,
-                            "Adicione a flag HttpOnly para impedir acesso via JavaScript no navegador."));
+                            "Add the HttpOnly flag to prevent access via JavaScript in the browser."));
                 }
                 if (!lower.contains("samesite")) {
-                    achados.add(new Finding(
-                            "Cookie '" + nomeCookie + "' sem atributo SameSite",
-                            Severity.BAIXA, baseUrl,
-                            "Sem SameSite, o cookie pode ser enviado em requisições cross-site, favorecendo CSRF.",
+                    findings.add(new Finding(
+                            "Cookie '" + cookieName + "' missing the SameSite attribute",
+                            Severity.LOW, baseUrl,
+                            "Without SameSite, the cookie can be sent on cross-site requests, favoring CSRF.",
                             cookie,
-                            "Defina SameSite=Lax ou Strict conforme a necessidade da aplicação."));
+                            "Set SameSite=Lax or Strict depending on the application's needs."));
                 }
             }
         } catch (Exception e) {
-            api.logging().logToError("[Rx0] Erro no check de cookies: " + e.getMessage());
+            api.logging().logToError("[Rx0] Error in cookies check: " + e.getMessage());
         }
-        return achados;
+        return findings;
     }
 }

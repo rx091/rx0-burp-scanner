@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>Rx0 Vulnerability Scanner</name>
-    <description>Extensão para Burp Suite Community — scanner de vulnerabilidades web com relatório HTML dark. Criado por Rx0 - @rodrigocoutinho91</description>
+    <description>Extension for Burp Suite Community — web vulnerability scanner with a dark-themed HTML report. Created by Rx0 - @rodrigocoutinho91</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -20,7 +20,7 @@
     </properties>
 
     <dependencies>
-        <!-- API oficial do Burp Suite para extensões (Community e Pro) -->
+        <!-- Official Burp Suite API for extensions (Community and Pro) -->
         <dependency>
             <groupId>net.portswigger.burp.extensions</groupId>
             <artifactId>montoya-api</artifactId>
@@ -32,7 +32,7 @@
     <build>
         <finalName>rx0-vuln-scanner</finalName>
         <plugins>
-            <!-- Empacota a extensão com todas as dependências (menos a montoya-api, que é "provided" pelo Burp) -->
+            <!-- Packages the extension with all dependencies (except montoya-api, which is "provided" by Burp) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>

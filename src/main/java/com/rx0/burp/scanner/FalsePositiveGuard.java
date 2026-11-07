@@ -7,81 +7,81 @@ import burp.api.montoya.http.message.responses.HttpResponse;
 import java.util.UUID;
 
 /**
- * Calcula, UMA VEZ por scan, um "baseline" pedindo um path propositalmente
- * aleatório e inexistente. Isso detecta o caso mais comum de falso-positivo
- * em scanners de path/endpoint: aplicações SPA (React/Vue/Angular) ou
- * servidores mal configurados que respondem HTTP 200 com a MESMA página
- * (geralmente o index.html) para QUALQUER rota (catch-all / soft-404).
+ * Calculates, ONCE per scan, a "baseline" by requesting a deliberately random,
+ * nonexistent path. This detects the most common source of false positives in
+ * path/endpoint scanners: SPA applications (React/Vue/Angular) or misconfigured
+ * servers that respond HTTP 200 with the SAME page (usually index.html) for
+ * ANY route (catch-all / soft-404).
  *
- * Checks que testam paths (ex: SensitivePathsCheck, ApiEndpointDiscoveryCheck)
- * usam esse guard para descartar "achados" que na verdade são só esse
- * comportamento de catch-all, e não uma exposição real.
+ * Checks that test paths (e.g. SensitivePathsCheck, ApiEndpointDiscoveryCheck)
+ * use this guard to discard "findings" that are actually just this catch-all
+ * behavior, rather than a real exposure.
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class FalsePositiveGuard {
 
-    private final boolean provavelCatchAll;
-    private final int statusBaseline;
-    private final int tamanhoBaseline;
-    private final String assinaturaConteudo; // primeiros 120 chars do corpo, pra comparação rápida
+    private final boolean likelyCatchAll;
+    private final int baselineStatus;
+    private final int baselineSize;
+    private final String contentSignature; // first 120 chars of the body, for quick comparison
 
-    private FalsePositiveGuard(boolean provavelCatchAll, int statusBaseline, int tamanhoBaseline, String assinaturaConteudo) {
-        this.provavelCatchAll = provavelCatchAll;
-        this.statusBaseline = statusBaseline;
-        this.tamanhoBaseline = tamanhoBaseline;
-        this.assinaturaConteudo = assinaturaConteudo;
+    private FalsePositiveGuard(boolean likelyCatchAll, int baselineStatus, int baselineSize, String contentSignature) {
+        this.likelyCatchAll = likelyCatchAll;
+        this.baselineStatus = baselineStatus;
+        this.baselineSize = baselineSize;
+        this.contentSignature = contentSignature;
     }
 
-    public static FalsePositiveGuard calcular(MontoyaApi api, String baseUrl) {
+    public static FalsePositiveGuard calculate(MontoyaApi api, String baseUrl) {
         try {
             String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-            String pathAleatorio = "/rx0-caminho-que-nao-existe-" + UUID.randomUUID().toString().substring(0, 12);
+            String randomPath = "/rx0-path-that-does-not-exist-" + UUID.randomUUID().toString().substring(0, 12);
 
-            HttpRequest req = HttpRequest.httpRequestFromUrl(base + pathAleatorio);
+            HttpRequest req = HttpRequest.httpRequestFromUrl(base + randomPath);
             HttpResponse resp = api.http().sendRequest(req).response();
             if (resp == null) {
                 return new FalsePositiveGuard(false, -1, -1, "");
             }
 
             String body = resp.bodyToString();
-            int tamanho = body == null ? 0 : body.length();
-            String assinatura = body == null ? "" : body.substring(0, Math.min(120, body.length()));
+            int size = body == null ? 0 : body.length();
+            String signature = body == null ? "" : body.substring(0, Math.min(120, body.length()));
 
-            // Se um path ALEATÓRIO E INEXISTENTE retorna 200, o servidor provavelmente
-            // tem uma rota catch-all (comum em SPA) — todo check de path/endpoint
-            // precisa comparar contra essa assinatura antes de reportar.
+            // If a RANDOM, NONEXISTENT path returns 200, the server likely has a
+            // catch-all route (common in SPAs) — every path/endpoint check needs to
+            // compare against this signature before reporting a finding.
             boolean catchAll = resp.statusCode() == 200;
 
-            api.logging().logToOutput("[Rx0] Baseline de falso-positivo: status=" + resp.statusCode()
-                    + " | catch-all detectado=" + catchAll + " | tamanho do corpo=" + tamanho);
+            api.logging().logToOutput("[Rx0] False-positive baseline: status=" + resp.statusCode()
+                    + " | catch-all detected=" + catchAll + " | body size=" + size);
 
-            return new FalsePositiveGuard(catchAll, resp.statusCode(), tamanho, assinatura);
+            return new FalsePositiveGuard(catchAll, resp.statusCode(), size, signature);
         } catch (Exception e) {
-            api.logging().logToError("[Rx0] Erro ao calcular baseline de falso-positivo: " + e.getMessage());
+            api.logging().logToError("[Rx0] Error calculating false-positive baseline: " + e.getMessage());
             return new FalsePositiveGuard(false, -1, -1, "");
         }
     }
 
     /**
-     * @return true se a resposta analisada bate com o padrão de catch-all detectado
-     *         no baseline (ou seja, é provavelmente um falso-positivo, não uma
-     *         exposição real daquele path específico).
+     * @return true if the analyzed response matches the catch-all pattern detected
+     *         in the baseline (i.e. it is likely a false positive, not a real
+     *         exposure of that specific path).
      */
-    public boolean pareceFalsoPositivo(int status, String body) {
-        if (!provavelCatchAll) return false;
-        if (status != statusBaseline) return false;
+    public boolean looksLikeFalsePositive(int status, String body) {
+        if (!likelyCatchAll) return false;
+        if (status != baselineStatus) return false;
 
-        int tamanho = body == null ? 0 : body.length();
-        String assinatura = body == null ? "" : body.substring(0, Math.min(120, body.length()));
+        int size = body == null ? 0 : body.length();
+        String signature = body == null ? "" : body.substring(0, Math.min(120, body.length()));
 
-        boolean tamanhoParecido = Math.abs(tamanho - tamanhoBaseline) <= Math.max(40, (int) (tamanhoBaseline * 0.05));
-        boolean assinaturaIgual = assinatura.equals(assinaturaConteudo);
+        boolean similarSize = Math.abs(size - baselineSize) <= Math.max(40, (int) (baselineSize * 0.05));
+        boolean sameSignature = signature.equals(contentSignature);
 
-        return tamanhoParecido && assinaturaIgual;
+        return similarSize && sameSignature;
     }
 
-    public boolean isProvavelCatchAll() {
-        return provavelCatchAll;
+    public boolean isLikelyCatchAll() {
+        return likelyCatchAll;
     }
 }

@@ -13,10 +13,10 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Testa diretórios comuns em busca de Directory Listing habilitado
- * (o servidor lista o conteúdo da pasta em vez de servir um index/404).
+ * Tests common directories looking for enabled Directory Listing
+ * (the server lists the folder's contents instead of serving an index/404).
  *
- * Criado por Rx0 - @rodrigocoutinho91
+ * Created by Rx0 - @rodrigocoutinho91
  */
 public class DirectoryListingCheck implements VulnCheck {
 
@@ -25,7 +25,7 @@ public class DirectoryListingCheck implements VulnCheck {
             "/backup/", "/backups/", "/assets/", "/static/", "/media/", "/tmp/", "/logs/"
     };
 
-    private static final Pattern[] ASSINATURAS = {
+    private static final Pattern[] SIGNATURES = {
             Pattern.compile("Index of /", Pattern.CASE_INSENSITIVE),
             Pattern.compile("<title>Directory listing for", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\[To Parent Directory\\]", Pattern.CASE_INSENSITIVE),
@@ -33,18 +33,18 @@ public class DirectoryListingCheck implements VulnCheck {
     };
 
     @Override
-    public String nome() {
-        return "Directory Listing habilitado";
+    public String name() {
+        return "Directory Listing enabled";
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl) {
-        return executar(api, baseUrl, FalsePositiveGuard.calcular(api, baseUrl));
+    public List<Finding> execute(MontoyaApi api, String baseUrl) {
+        return execute(api, baseUrl, FalsePositiveGuard.calculate(api, baseUrl));
     }
 
     @Override
-    public List<Finding> executar(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
-        List<Finding> achados = new ArrayList<>();
+    public List<Finding> execute(MontoyaApi api, String baseUrl, FalsePositiveGuard guard) {
+        List<Finding> findings = new ArrayList<>();
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 
         for (String path : PATHS) {
@@ -56,26 +56,26 @@ public class DirectoryListingCheck implements VulnCheck {
 
                 String body = resp.bodyToString();
                 if (body == null) continue;
-                if (guard.pareceFalsoPositivo(resp.statusCode(), body)) continue;
+                if (guard.looksLikeFalsePositive(resp.statusCode(), body)) continue;
 
-                for (Pattern p : ASSINATURAS) {
+                for (Pattern p : SIGNATURES) {
                     if (p.matcher(body).find()) {
-                        achados.add(new Finding(
-                                "Directory Listing habilitado em " + path,
+                        findings.add(new Finding(
+                                "Directory Listing enabled at " + path,
                                 Severity.INFO,
                                 url,
-                                "O servidor lista o conteúdo do diretório em vez de retornar um index/404, expondo a estrutura " +
-                                        "de arquivos e potencialmente arquivos não destinados a acesso público.",
-                                "Assinatura encontrada: " + p.pattern(),
-                                "Desabilite a listagem de diretórios no servidor web (ex: 'Options -Indexes' no Apache, " +
-                                        "'autoindex off;' no Nginx) e coloque um arquivo index vazio em pastas públicas se necessário."));
+                                "The server lists the directory's contents instead of returning an index/404, exposing the " +
+                                        "file structure and potentially files not intended for public access.",
+                                "Signature found: " + p.pattern(),
+                                "Disable directory listing on the web server (e.g. 'Options -Indexes' on Apache, " +
+                                        "'autoindex off;' on Nginx) and place an empty index file in public folders if needed."));
                         break;
                     }
                 }
             } catch (Exception e) {
-                api.logging().logToError("[Rx0] Erro no check de Directory Listing (" + path + "): " + e.getMessage());
+                api.logging().logToError("[Rx0] Error in Directory Listing check (" + path + "): " + e.getMessage());
             }
         }
-        return achados;
+        return findings;
     }
 }
